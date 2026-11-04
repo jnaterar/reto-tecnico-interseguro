@@ -479,6 +479,13 @@ curl -s -X POST "$ENDORSE_URL/v1/endorse/translate" \
    se pasan como *build args* (el [`Dockerfile`](frontend-monolith/Dockerfile:12) ya los declara
    como `ARG` + `ENV`) apuntando a las URLs públicas de los dos backends.
    > Si se cambia una URL hay que **reconstruir** la imagen; reiniciar el servicio no basta.
+   >
+   > **Trampa si se omiten**: en Docker Compose los valores por defecto (`/endorse-api`, `/routes-api`)
+   > funcionan porque [`nginx.conf`](frontend-monolith/nginx.conf:1) hace proxy a los nombres de
+   > servicio `endorsements:8082` y `routes:8081`. En Render esos DNS **no existen**, así que una
+   > imagen construida sin las URLs absolutas sirve la SPA pero devuelve `502` en cada llamada.
+   > Verificación rápida tras el primer deploy: pulsar *Traducir* y comprobar en la pestaña *Network*
+   > que la petición sale hacia `https://<backend>.onrender.com`, no hacia `/endorse-api`.
 6. Ajustar `CORS_ORIGINS` / `CORS_ORIGIN` al dominio del frontend y repetir 8.8.
 
 **Token en cloud**: el cuerpo correcto es `{}` o `{"subject":"demo-client","scope":"endorse:translate"}`
@@ -575,4 +582,10 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 | `cd backend-endorsements-hapi && npm run typecheck && npm test` | OK — `tsc --noEmit` limpio, **20/20** tests |
 | `cd frontend-monolith && npm run build` | OK — `tsc --noEmit` + `vite build` (156 kB JS / 8 kB CSS) |
 | `docker compose config -q` | OK — compose válido |
-| `docker compose up --build` | **No ejecutado** en este entorno |
+| `docker compose down -v && docker compose up -d --build` | OK — partiendo de volumen limpio: `db`, `endorsements`, `routes` y `frontend` en *healthy*; `seed` terminó `Exited (0)` |
+| `curl :8080/healthz` · `/health` de ambos backends | OK — `200 ok` a través de nginx; JSON `{"status":"ok"}` en 8082 y 8081 |
+| Traducción end-to-end vía nginx (token → `/v1/endorse/translate`) | OK — 12 etiquetas en el orden de la plantilla, `'Default'` vs `''` preservados |
+| Rutas vía nginx: Miraflores→San Isidro = 7 · `NODE_NOT_FOUND` · `NEGATIVE_WEIGHT` · `UNREACHABLE` | OK — `200` / `422` / `400` / `422` |
+| `curl .../endorse/translate` sin `Authorization` | OK — `401 UNAUTHORIZED` |
+| Grep de hardcode (`ProductosVida\\|TES008\\|EndososSimplesSACRumbo` en `src/`, excluyendo `seed`) | OK — sin resultados: el negocio vive en la plantilla, no en el código |
+| Despliegue en la nube (§8) | **No ejecutado**: requiere cuenta/proyecto. La guía es reproducible, pero no está validada contra un entorno real |
