@@ -6,6 +6,10 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# Python (script de render de diagramas)
+__pycache__/
+*.pyc
+
 # Variables de entorno locales (los secretos nunca se versionan)
 .env
 .env.local

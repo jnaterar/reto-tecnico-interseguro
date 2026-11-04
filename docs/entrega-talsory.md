@@ -80,8 +80,10 @@ infraestructura. Preferí terminar tres retos verificables antes que cuatro a me
   `go build`, `go vet` y `go test ./...` verdes; build del frontend verde; `docker compose config` válido.
 - **No ejecutado** en este entorno: `docker compose up --build` y el despliegue cloud. La guía de
   despliegue (GCP Cloud Run, con alternativa Render/Railway) está en el README, paso a paso.
-- Pendientes declarados: tests de frontend, migraciones formales en lugar de `DB_SYNCHRONIZE`,
-  y exportación de los diagramas a `.png` (se entregan `.drawio` editables + Mermaid legible).
+- Los diagramas del Reto 3 se entregan en tres formatos: `.drawio` editable, `.png` ya exportado
+  (2× y fondo blanco) y Mermaid legible en GitHub. Están redactados en español, conservando en
+  inglés solo los términos reservados (`Idempotency-Key`, `202 Accepted`, `PENDING`, `Pub/Sub`, etc.).
+- Pendientes declarados: tests de frontend y migraciones formales en lugar de `DB_SYNCHRONIZE`.
 
 El README del repositorio incluye la **priorización declarada**, las **decisiones y trade-offs**
 por reto, la tabla de trampas con su test asociado, los ejemplos `cURL` y la estructura del repo.

@@ -28,8 +28,11 @@ El orden no fue casual: primero lo que **se puede romper en silencio**, después
 **Recortes conscientes** (declarados, no olvidados):
 
 - Sin tests automatizados de frontend: el presupuesto de pruebas se gastó donde hay lógica de negocio (mapper puro + algoritmo + contratos HTTP).
-- Sin diagramas `.png` generados: no hay *drawio CLI* en el entorno. Se entregan `.drawio` editables + Mermaid legible en GitHub.
 - Sin despliegue cloud ejecutado: no hay cuenta/proyecto disponible. La guía es reproducible paso a paso y cada comando está explicado.
+
+Los diagramas del Reto 3 no son un recorte: se entregan `.drawio` (fuente editable) **y** `.png`
+ya generados a 2× con fondo blanco desde el propio XML vía
+[`render_drawio.py`](architecture-drawio/render_drawio.py), porque el entorno no tiene *drawio CLI*.
 
 ---
 
@@ -538,10 +541,16 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 - `DB_SYNCHRONIZE=true` solo para local/demo; producción usa migraciones.
 - El token de demo valida el flujo completo; falta integración con el IdP real (OIDC/JWKS).
 - El frontend no tiene tests automatizados (decisión de priorización, no olvido).
-- **Diagramas**: se entregan `.drawio` editables y Mermaid en el documento. Los `.png` no se generaron
-  porque no hay *drawio CLI* en el entorno; se exportan con la extensión *Draw.io Integration*
-  (`File → Export as → PNG`, escala 200%, borde 10) guardándolos junto a los `.drawio`
-  como `as-is.png` y `to-be.png`.
+- **Diagramas**: se entregan `.drawio` editables, los `.png` ya renderizados (`as-is.png`, `to-be.png`,
+  escala 2×, fondo blanco, borde 20) y Mermaid como fallback legible en GitHub. El TO-BE agrupa los
+  componentes en cinco contenedores etiquetados (`Borde / Entrada`, `Procesamiento asíncrono`,
+  `Datos`, `Salida al core`, `Transversales`) para que se pueda seguir de un vistazo. El texto está en
+  español y solo conservan inglés los términos reservados (`POST`, `202 Accepted`, `502`,
+  `Idempotency-Key`, `PENDING`/`PROCESSING`/`COMPLETED`/`FAILED`/`COMPENSATED`, `Pub/Sub`,
+  `Cloud Run`, `PostgreSQL`, etc.). Como el entorno no tiene *drawio CLI*, el PNG se genera con
+  `python3 architecture-drawio/render_drawio.py`; si se edita el `.drawio` y se prefiere la
+  herramienta oficial, `File → Export as → PNG` (escala 200%, borde 10, sin transparencia) da un
+  resultado equivalente.
 - **Despliegue cloud**: guía completa, sin ejecutar (sin cuenta/proyecto disponible).
 - Pendiente para producción: OpenTelemetry, rate limiting, paginación de catálogos de plantillas,
   pruebas de carga del cálculo de rutas y auditoría de cambios de plantilla.
@@ -567,7 +576,10 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 ├── architecture-drawio/         # Reto 3
 │   ├── architecture.md          # diagnóstico, TO-BE, decisiones, Mermaid
 │   ├── as-is.drawio             # diagrama editable del flujo actual
-│   └── to-be.drawio             # diagrama editable de la solución
+│   ├── as-is.png                # export 2× con fondo blanco (2240×1760)
+│   ├── to-be.drawio             # diagrama editable de la solución
+│   ├── to-be.png                # export 2× con fondo blanco (3200×3200)
+│   └── render_drawio.py         # .drawio → PNG con Pillow (sin drawio CLI)
 └── docs/
     └── entrega-talsory.md       # correo de entrega
 ```
@@ -588,4 +600,5 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 | Rutas vía nginx: Miraflores→San Isidro = 7 · `NODE_NOT_FOUND` · `NEGATIVE_WEIGHT` · `UNREACHABLE` | OK — `200` / `422` / `400` / `422` |
 | `curl .../endorse/translate` sin `Authorization` | OK — `401 UNAUTHORIZED` |
 | Grep de hardcode (`ProductosVida\\|TES008\\|EndososSimplesSACRumbo` en `src/`, excluyendo `seed`) | OK — sin resultados: el negocio vive en la plantilla, no en el código |
+| `python3 architecture-drawio/render_drawio.py` | OK — `as-is.png` (2240×1760) y `to-be.png` (3200×3200), fondo blanco opaco |
 | Despliegue en la nube (§8) | **No ejecutado**: requiere cuenta/proyecto. La guía es reproducible, pero no está validada contra un entorno real |

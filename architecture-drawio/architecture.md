@@ -93,46 +93,47 @@ segura de reintento.
 
 1. **Cliente / Zona Segura (SPA).** Pantalla de solicitud de préstamo; espera
    confirmación sincrónica.
-2. **API Gateway / WAF.** Expone el backend Node; aplica autenticación y
-   enrutamiento.
-3. **Backend Node (orquestador).** Recibe la solicitud, llama al proxy de INARI
+2. **Backend Node (orquestador).** Recibe la solicitud, llama al proxy de INARI
    y espera la respuesta para responder al cliente.
-4. **Proxy INARI.** Reenvía la petición a `admwr`; aplica un timeout y
+3. **Proxy INARI.** Reenvía la petición a `admwr`; aplica un timeout y
    devuelve `502` cuando se supera.
-5. **Servidor admwr (VMWARE INARI).** Procesa el préstamo en segundo plano;
+4. **Servidor admwr (VMWARE INARI).** Procesa el préstamo en segundo plano;
    puede completar aunque el proxy ya haya respondido 502.
-6. **Core transaccional / AS400.** Ejecuta el movimiento de desembolso.
-7. **BD de solicitudes (sin idempotencia).** Registra la solicitud sin clave
+5. **Core transaccional / AS400.** Ejecuta el movimiento de desembolso.
+6. **BD de solicitudes (sin idempotencia).** Registra la solicitud sin clave
    única que impida reintentos duplicados.
+
+> El API Gateway / WAF no interviene en el fallo y se omite del AS-IS para no
+> desplazar el foco: el problema está en la frontera **Proxy INARI ↔ Backend**.
+> En el TO-BE sí aparece, porque allí aporta autenticación, rate limit y el
+> `202 Accepted` inmediato.
 
 ### B.2 Conexiones y flujo
 
 ```
-Cliente (Zona Segura)
-   │  1. POST /loans/disburse (sincrónico, espera en pantalla)
-   ▼
-API Gateway / WAF
-   │  2. forward
+Cliente / Zona Segura (SPA)
+   │  1. POST /loans/disburse (sincrónico: espera en pantalla)
    ▼
 Backend Node (orquestador)
-   │  3. POST /inari/disburse (timeout = T_proxy)
+   │  2. reenvía (timeout del proxy = T_proxy)
    ▼
-Proxy INARI
-   │  4. forward
-   ▼
-Servidor admwr (VMWARE INARI)
-   │  5. execute (latencia > T_proxy)
-   ▼
-Core transaccional / AS400
-   │  6. desembolso ejecutado
-   ▲
-   │  7. respuesta lenta
-Proxy INARI ── 8. timeout → 502 ──► Backend Node ── 9. 502 ──► Cliente
-                                                          │
-                                         10. el cliente reintenta
-                                                          ▼
-                                      Backend Node → Proxy → admwr → Core
-                                                  (segundo desembolso)
+Proxy INARI ── 3. ejecuta (latencia > T_proxy) ──► Servidor admwr
+   │                                                  │
+   │                                   4. desembolso ejecutado
+   │                                                  ▼
+   │                                   Core transaccional / AS400
+   │                                                  │
+   │                             (registra, SIN clave única de idempotencia)
+   │                                                  ▼
+   └──────────────────────────────────────► BD de solicitudes
+
+El fallo, en detalle:
+Proxy INARI ── 5. timeout → 502 ──► Backend Node ── 502 ──► Cliente
+                                                               │
+                                     6. reintento SIN Idempotency-Key
+                                                               ▼
+                     Backend Node ──► Proxy INARI ──► admwr ──► Core
+                                           (segundo desembolso)
 ```
 
 ### B.3 Punto exacto de fallo
@@ -461,13 +462,61 @@ Ambos diagramas están versionados en este mismo directorio como XML de
 draw.io sin comprimir, por lo que se abren y editan directamente (no son
 capturas ni imágenes).
 
-- **AS-IS:** usar [`as-is.drawio`](./as-is.drawio). Contiene los 7 nodos del
-  flujo actual, el punto de fallo marcado en rojo y la arista de reintento.
+- **AS-IS:** usar [`as-is.drawio`](./as-is.drawio). Contiene los 6 nodos del
+  flujo actual (cliente, backend, base de datos, proxy INARI, servidor admwr y
+  core), el punto de fallo marcado en rojo y la arista de reintento.
 - **TO-BE:** usar [`to-be.drawio`](./to-be.drawio). Contiene el flujo
   asíncrono, idempotencia, lock, Pub/Sub, worker, circuit breaker, DLQ,
-  reconciliación y observabilidad.
+  reconciliación y observabilidad, con los 16 componentes agrupados en cinco
+  contenedores etiquetados (`Borde / Entrada`, `Procesamiento asíncrono`,
+  `Datos`, `Salida al core`, `Transversales`). Las aristas van por los pasillos
+  entre contenedores, así que el diagrama se lee de arriba abajo en lugar de
+  concentrar los cruces en el centro.
 - Si se prefiere editar en la web, abrir <https://app.diagrams.net> y arrastrar
   el archivo `.drawio`.
+
+**Idioma.** Todo el texto descriptivo está en español; solo se conservan en
+inglés los términos técnicos reservados: `POST`, `202 Accepted`, `502`,
+`Idempotency-Key`, `requestId`, `statusUrl`, `PostgreSQL`, `Redis`, `TTL`,
+`API Gateway`, `WAF`, `Pub/Sub`, `Cloud Run`, `Circuit Breaker`,
+`Dead Letter Queue`, `Reconciliation Job`, `Cloud Scheduler`, `mTLS`, `JWT`,
+`SSE` y los estados `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED` y
+`COMPENSATED`.
+
+**Layout.** AS-IS: página de 1100×860, 6 cajas de 280×80 px y separación mínima
+de 70 px. TO-BE: página de 1580×1580 con cinco bandas horizontales de
+1460×190 px (la última, 200 px) separadas por pasillos de 100 px; dentro de cada
+banda los componentes van en rejilla de tres columnas con cajas de 280×90 px
+(240×90 px en `Transversales`). Las bandas se dibujan como contenedores
+discontinuos de fondo `#f8f9fa` con la etiqueta en la esquina superior izquierda,
+de modo que las aristas cruzan pasillos vacíos y no cajas ni texto. En ambos,
+`whiteSpace=wrap`, fuente de 12–13 px en cajas y 10–11 px en etiquetas de
+arista con fondo blanco.
+
+**Verificación del layout.** Antes de exportar, los dos `.drawio` se revisan con
+un script que replica las métricas tipográficas del renderizador (ancho real del
+texto con la misma fuente y tamaño, alto de línea, relleno de las etiquetas). El
+resultado actual: 0 textos desbordados, 0 etiquetas que se pisen entre sí, 0
+etiquetas fuera de página, 0 aristas que atraviesen una caja ajena, y 5 cruces
+entre aristas en el TO-BE (3 en el AS-IS). Los 5 del TO-BE son estructurales: los
+protagoniza `b10` (retorno del trabajador al `Circuit Breaker`, que cruza la
+página de derecha a izquierda por el pasillo y = 880) más las aristas
+transversales `b14`, `b15` y `b12`, que necesariamente cruzan ese pasillo. La
+primera versión con contenedores tenía 13 cruces porque la banda `Transversales`
+estaba ordenada por afinidad conceptual y no por columna; al alinear cada caja
+bajo su contraparte y reencaminar siete aristas bajó a 5. La etiqueta de `b13`
+va en dos líneas (`11. desembolso` / `idempotente`) porque en una sola ocupa
+281 px de canvas y el pasillo entre `proxy` y `admwr` mide 200 px: así queda
+completa dentro del pasillo, sin invadir ningún borde de caja.
+
+**Exportación a PNG.** Los `.png` versionados se generan desde el XML con
+[`render_drawio.py`](./render_drawio.py), porque el entorno no tiene la CLI de
+draw.io. El script usa Pillow, respeta la geometría y los estilos del `.drawio`
+y escribe a 2× sobre fondo blanco opaco:
+
+```bash
+python3 architecture-drawio/render_drawio.py
+```
 
 ### E.2 Diagramas Mermaid (fallback legible en GitHub)
 
@@ -475,45 +524,78 @@ capturas ni imágenes).
 
 ```mermaid
 flowchart LR
-    C[Cliente / Zona Segura] -->|POST sincrónico| G[API Gateway / WAF]
-    G --> B[Backend Node]
-    B -->|timeout T_proxy| P[Proxy INARI]
-    P --> A[Servidor admwr]
-    A --> K[Core transaccional]
-    P -.->|502 por timeout| B
+    C[Cliente / Zona Segura]
+    B[Backend Node]
+    DB[(Base de datos de solicitudes / sin clave única)]
+    P[Proxy INARI / límite T_proxy]
+    A[Servidor admwr / T_admwr mayor que T_proxy]
+    K[Core transaccional / AS400]
+
+    C -->|1. POST /loans/disburse| B
+    B -->|2. reenvía| P
+    P -->|3. ejecuta: latencia mayor que T_proxy| A
+    A -->|4. desembolso ejecutado| K
+    B -.->|registra la solicitud| DB
+    P -.->|5. timeout: 502| B
     B -.->|502| C
-    C -.->|reintento sin Idempotency-Key| B
-    B -.->|segunda ejecución| P
-    P -.-> A
+    C -.->|6. reintento SIN Idempotency-Key| B
+    B -.->|segundo intento| P
     A -.->|segundo desembolso| K
-    classDef fail fill:#ffcccc,stroke:#cc0000,stroke-width:2px;
-    class P,B fail;
+    classDef fallo fill:#ffcccc,stroke:#cc0000,stroke-width:2px;
+    class P,B fallo;
 ```
 
 **TO-BE**
 
 ```mermaid
 flowchart LR
-    C[Cliente / Zona Segura] -->|JWT + Idempotency-Key| G[API Gateway / WAF]
-    G --> L[Loans API]
-    L --> I[(Idempotency Store)]
-    L --> D[(Loans DB)]
-    L -->|202 + requestId| C
-    L --> Q[[Pub/Sub]]
-    Q --> W[Disbursement Worker]
-    W --> LK{Policy Lock}
-    W --> CB[Circuit Breaker]
-    CB -->|mTLS| P[Proxy INARI]
-    P --> A[Servidor admwr]
-    A --> K[Core idempotente]
-    W --> D
-    W --> N[Notification Service]
-    N --> C
-    R[Reconciliation Job] --> D
-    R --> P
-    Q --> DLQ[[DLQ]]
-    L --> O[Observabilidad]
-    W --> O
+    subgraph BORDE["Borde / Entrada"]
+        C[Cliente / Zona Segura]
+        G[API Gateway / WAF]
+    end
+    subgraph ASINCRONO["Procesamiento asíncrono"]
+        L[Loans API - Node]
+        Q[[Pub/Sub]]
+        W[Trabajador - Cloud Run]
+    end
+    subgraph DATOS["Datos"]
+        I[(Idempotency Store)]
+        D[(Base de datos de préstamos / PostgreSQL)]
+        LK{Lock por préstamo}
+    end
+    subgraph SALIDA["Salida al core"]
+        CB[Circuit Breaker + Retry]
+        P[Proxy INARI - mTLS]
+        A[Servidor admwr / Core AS400]
+    end
+    subgraph TRANSVERSALES["Transversales"]
+        N[Servicio de notificación]
+        O[Observabilidad]
+        S[Gestor de secretos / KMS]
+        R[Trabajo de reconciliación - Cloud Scheduler]
+        DLQ[[Dead Letter Queue]]
+    end
+
+    C -->|1. POST + Idempotency-Key| G
+    G -->|2. reenvía| L
+    L -->|3. consulta/crea PENDING| I
+    L -->|4. persiste estado| D
+    L -.->|5. 202 Accepted + requestId| C
+    L -->|5. publica evento| Q
+    Q -->|6. consume| W
+    W -->|7. adquiere lock| LK
+    W -->|8. actualiza estado a PROCESSING| D
+    W -->|9. llamada protegida| CB
+    CB -->|10. mTLS + correlationId| P
+    P -->|11. desembolso idempotente| A
+    D -.->|12. notifica cambio de estado| N
+    N -->|SSE / webhook| C
+    R -->|reconcilia PENDING colgados| D
+    R -->|reintenta| P
+    Q -->|fallo tras reintentos| DLQ
+    S -.->|credenciales| P
+    L -.->|traza completa| O
+    W -.->|traza completa| O
 ```
 
 ### E.3 Mensaje para el README
