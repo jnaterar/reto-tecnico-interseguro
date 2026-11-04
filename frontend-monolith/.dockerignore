@@ -1,0 +1,8 @@
+# El build usa los ARG del Dockerfile; un .env local no debe filtrarse.
+node_modules
+dist
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store

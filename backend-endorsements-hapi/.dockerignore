@@ -1,0 +1,10 @@
+# El build solo necesita package*.json, tsconfig.json y src/.
+node_modules
+dist
+coverage
+tests
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store

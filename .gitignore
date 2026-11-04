@@ -1,0 +1,28 @@
+# Dependencias
+node_modules/
+
+# Artefactos de build
+dist/
+coverage/
+*.tsbuildinfo
+
+# Variables de entorno locales (los secretos nunca se versionan)
+.env
+.env.local
+.env.*.local
+
+# Binarios Go
+bin/
+*.exe
+*.test
+*.out
+
+# Sistema operativo / editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# Docker local
+*.pid

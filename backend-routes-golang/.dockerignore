@@ -1,0 +1,5 @@
+# Binarios locales y documentación no forman parte del build.
+*.md
+*.exe
+bin/
+.DS_Store

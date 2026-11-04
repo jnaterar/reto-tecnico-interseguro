@@ -1,0 +1,74 @@
+<mxfile host="app.diagrams.net" agent="Roo Code" version="24.7.17" type="device">
+  <diagram id="as-is-disbursement" name="AS-IS — Desembolso sincrónico">
+    <mxGraphModel dx="1400" dy="820" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="AS-IS — Desembolso sincrónico de préstamos (el fallo está en la frontera Proxy INARI ↔ Backend Node)" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="900" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="client" value="Cliente / Zona Segura (SPA)&#10;espera confirmación en pantalla" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="60" y="60" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="gateway" value="API Gateway / WAF&#10;autenticación + enrutamiento" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="60" y="170" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="backend" value="Backend Node (orquestador)&#10;llama a INARI y espera la respuesta" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="60" y="280" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="proxy" value="Proxy INARI&#10;timeout = T_proxy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="60" y="390" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="admwr" value="Servidor admwr (VMWARE INARI)&#10;T_admwr mayor que T_proxy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="60" y="500" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="core" value="Core transaccional / AS400&#10;ejecuta el desembolso" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="60" y="610" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="db" value="BD de solicitudes&#10;SIN clave única de idempotencia" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;shape=cylinder3;" vertex="1" parent="1">
+          <mxGeometry x="400" y="280" width="220" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" value="1. POST /loans/disburse (sincrónico)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="client" target="gateway">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="2. forward" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="gateway" target="backend">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="3. POST /inari/disburse (timeout T_proxy)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="backend" target="proxy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="4. forward" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="proxy" target="admwr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="5. execute (latencia mayor que T_proxy)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="admwr" target="core">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="6. desembolso ejecutado" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" edge="1" parent="1" source="core" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="8. timeout → 502 (T_proxy menor que T_admwr)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#cc0000;fontColor=#cc0000;strokeWidth=3;" edge="1" parent="1" source="proxy" target="backend">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="9. 502" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#cc0000;fontColor=#cc0000;" edge="1" parent="1" source="backend" target="client">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="10. el cliente reintenta SIN Idempotency-Key" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#cc0000;fontColor=#cc0000;strokeWidth=3;" edge="1" parent="1" source="client" target="backend">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="segunda ejecución → segundo desembolso" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#cc0000;fontColor=#cc0000;strokeWidth=3;" edge="1" parent="1" source="backend" target="core">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="registra sin deduplicar" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="backend" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="danger" value="ZONA DE PELIGRO: la operación queda posiblemente ejecutada pero no confirmada. Subir el timeout reduce la probabilidad, no elimina el fallo." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacingLeft=10;fontStyle=1;fontColor=#7a1f1f;" vertex="1" parent="1">
+          <mxGeometry x="400" y="400" width="420" height="90" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

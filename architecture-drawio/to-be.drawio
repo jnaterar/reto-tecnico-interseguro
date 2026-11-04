@@ -1,0 +1,122 @@
+<mxfile host="app.diagrams.net" agent="Roo Code" version="24.7.17" type="device">
+  <diagram id="to-be-disbursement" name="TO-BE — Idempotente y asíncrono">
+    <mxGraphModel dx="1400" dy="820" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1150" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="TO-BE — Aceptar rápido (202), ejecutar con Idempotency-Key, reconciliar estados colgados" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="1000" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="client" value="Cliente / Zona Segura (SPA)&#10;envía Idempotency-Key y consulta requestId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="gateway" value="API Gateway / WAF&#10;JWT · rate limit · routing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="170" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="api" value="Loans API (Node)&#10;valida · persiste · publica · 202 Accepted" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="280" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="idem" value="Idempotency Store (Redis)&#10;key → requestId + hash + estado (TTL)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="280" width="250" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="db" value="Loans DB (PostgreSQL)&#10;máquina de estados + correlationId&#10;UNIQUE(Idempotency-Key)" style="shape=cylinder3;rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="380" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="lock" value="Policy Lock (Redis)&#10;serializa intentos por policyNumber" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="340" y="170" width="250" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="pubsub" value="Pub/Sub&#10;topic: disbursement-requests" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="400" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="worker" value="Disbursement Worker (Cloud Run)&#10;lock · idempotencia · estado" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="500" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="breaker" value="Circuit Breaker + Retry&#10;backoff exponencial + jitter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="340" y="510" width="250" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="proxy" value="Proxy INARI (mTLS)&#10;timeout calibrado + correlationId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="640" y="510" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="admwr" value="admwr / Core AS400&#10;idempotente por correlationId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="640" y="390" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="notify" value="Notification Service&#10;push / email / SSE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="340" y="610" width="250" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="recon" value="Reconciliation Job&#10;Cloud Scheduler → PENDING antiguos" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="640" y="170" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="dlq" value="Dead Letter Queue&#10;mensajes agotados → reproceso" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="40" y="620" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="obs" value="Observabilidad&#10;requestId / correlationId end-to-end" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="640" y="620" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="secrets" value="Secrets Manager / KMS&#10;JWT · mTLS · credenciales" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="640" y="60" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t1" value="1. POST /v1/loans/disbursements&#10;Authorization + Idempotency-Key" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="client" target="gateway">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t2" value="2. forward" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="gateway" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t3" value="3. consulta/crea PENDING (hash del payload)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="api" target="idem">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t4" value="4. persiste estado + UNIQUE" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="api" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t5" value="202 Accepted { requestId, statusUrl }" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeWidth=2;" edge="1" parent="1" source="api" target="client">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t6" value="5. publica evento" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="api" target="pubsub">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t7" value="6. consume" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="pubsub" target="worker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t8" value="7. adquiere lock" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="worker" target="lock">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t9" value="8. PROCESSING → COMPLETED / FAILED" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="worker" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t10" value="9. llamada protegida" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="worker" target="breaker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t11" value="10. mTLS + correlationId" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="breaker" target="proxy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t12" value="11. desembolso idempotente" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="proxy" target="admwr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t13" value="12. notifica cambio de estado" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" edge="1" parent="1" source="db" target="notify">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t14" value="13. reintentos agotados" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;fontColor=#b85450;" edge="1" parent="1" source="breaker" target="dlq">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t15" value="14. concilia PENDING colgados" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" edge="1" parent="1" source="recon" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t16" value="consulta GET /{requestId}" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" edge="1" parent="1" source="client" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17" value="traza completa" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#9673a6;fontColor=#9673a6;" edge="1" parent="1" source="worker" target="obs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t18" value="credenciales" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#9673a6;fontColor=#9673a6;" edge="1" parent="1" source="secrets" target="proxy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="states" value="Máquina de estados: PENDING → PROCESSING → COMPLETED | FAILED | COMPENSATED&#10;Idempotencia: misma key ⇒ mismo requestId y nunca un segundo desembolso" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;spacingLeft=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="720" width="640" height="70" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

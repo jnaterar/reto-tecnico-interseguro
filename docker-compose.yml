@@ -1,0 +1,128 @@
+# Orquestación local del reto técnico.
+#
+#   docker compose up --build
+#
+# Topología:
+#   db            PostgreSQL 16 (datos de plantillas data-driven)
+#   endorsements  Reto 1 — Hapi + TypeORM        :8082
+#   seed          contenedor one-shot que siembra las plantillas y termina
+#   routes        Reto 2 — Go + Dijkstra         :8081
+#   frontend      nginx sirviendo la SPA y proxyeando /endorse-api y /routes-api :8080
+#
+# El frontend habla con rutas relativas; nginx resuelve las URLs internas
+# (endorsements:8082 y routes:8081), por lo que no hace falta CORS en el navegador.
+name: interseguro-reto-tecnico
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: interseguro-db
+    environment:
+      POSTGRES_USER: interseguro
+      POSTGRES_PASSWORD: interseguro
+      POSTGRES_DB: endorsements
+    ports:
+      # 5433 en el host para no chocar con un Postgres local ya instalado.
+      - "5433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U interseguro -d endorsements"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  endorsements:
+    build:
+      context: ./backend-endorsements-hapi
+    image: interseguro/endorsements-hapi:local
+    container_name: interseguro-endorsements
+    environment:
+      PORT: "8082"
+      HOST: 0.0.0.0
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: interseguro
+      DB_PASSWORD: interseguro
+      DB_NAME: endorsements
+      # Solo para el entorno local: en producción las tablas se crean con migraciones.
+      DB_SYNCHRONIZE: "true"
+      DB_LOGGING: "false"
+      JWT_SECRET: dev-secret-change-me-please
+      JWT_TTL_SECONDS: "3600"
+      ENABLE_DEMO_TOKEN: "true"
+      CORS_ORIGINS: "*"
+    ports:
+      - "8082:8082"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Contenedor efímero: siembra las plantillas de RUMBO y AUTO y termina.
+  # Reutiliza la misma imagen que `endorsements` (mismo código compilado).
+  seed:
+    build:
+      context: ./backend-endorsements-hapi
+    image: interseguro/endorsements-hapi:local
+    container_name: interseguro-seed
+    command: ["node", "dist/seed/seed.js"]
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: interseguro
+      DB_PASSWORD: interseguro
+      DB_NAME: endorsements
+      DB_SYNCHRONIZE: "true"
+      DB_LOGGING: "false"
+      JWT_SECRET: dev-secret-change-me-please
+    depends_on:
+      db:
+        condition: service_healthy
+      # `seed` espera a que el API esté sano: para entonces TypeORM ya creó las tablas.
+      endorsements:
+        condition: service_healthy
+    restart: "no"
+
+  routes:
+    build:
+      context: ./backend-routes-golang
+    image: interseguro/routes-golang:local
+    container_name: interseguro-routes
+    environment:
+      PORT: "8081"
+      JWT_SECRET: dev-secret-change-me-please
+      JWT_TTL_MINUTES: "60"
+      ENABLE_DEMO_TOKEN: "true"
+      CORS_ORIGIN: "*"
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend-monolith
+      args:
+        # Rutas relativas: las resuelve nginx en tiempo de ejecución.
+        VITE_ENDORSE_API_BASE: /endorse-api
+        VITE_ROUTES_API_BASE: /routes-api
+    image: interseguro/frontend-monolith:local
+    container_name: interseguro-frontend
+    ports:
+      - "8080:8080"
+    depends_on:
+      endorsements:
+        condition: service_healthy
+      routes:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  db-data:
