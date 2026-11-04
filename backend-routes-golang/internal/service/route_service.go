@@ -53,16 +53,22 @@ func (s *RouteService) FindOptimalRoute(req OptimalRouteRequest) (OptimalRouteRe
 		return OptimalRouteResponse{}, domain.NewNodeNotFoundError(req.AccidentLocation)
 	}
 
+	// Trampa 5: un nodo inexistente (accidente O base) es un error de contrato
+	// DISTINTO de "no alcanzable". Se valida antes de calcular para no confundir
+	// "no existe en la red" con "existe pero está aislado".
+	for _, depot := range req.Depots {
+		if !graph.HasNode(depot) {
+			return OptimalRouteResponse{}, domain.NewNodeNotFoundError(depot)
+		}
+	}
+
 	var best *domain.Path
 	bestDepot := ""
 
 	for _, depot := range req.Depots {
-		// Se evalúa cada base de forma independiente: una base aislada no debe
-		// impedir que otra, sí alcanzable, sea seleccionada.
-		if !graph.HasNode(depot) {
-			continue
-		}
-
+		// Se evalúa cada base de forma independiente: una base aislada (existe
+		// en el grafo pero sin camino) no debe impedir que otra, sí alcanzable,
+		// sea seleccionada.
 		path, pathErr := graph.ShortestPath(depot, req.AccidentLocation)
 		if pathErr != nil {
 			var appErr *domain.AppError

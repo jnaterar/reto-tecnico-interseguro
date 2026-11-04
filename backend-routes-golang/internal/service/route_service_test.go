@@ -152,6 +152,16 @@ func TestFindOptimalRouteErrors(t *testing.T) {
 			wantCode: domain.CodeNodeNotFound,
 		},
 		{
+			name: "depot inexistente en el grafo",
+			request: service.OptimalRouteRequest{
+				AccidentLocation: "San Isidro",
+				Depots:           []string{"Lurigancho"},
+				Graph:            limaGraph(),
+			},
+			// Trampa 5: un nodo inexistente es NODE_NOT_FOUND, no UNREACHABLE.
+			wantCode: domain.CodeNodeNotFound,
+		},
+		{
 			name: "ninguna base alcanza el siniestro",
 			request: service.OptimalRouteRequest{
 				AccidentLocation: "Target",

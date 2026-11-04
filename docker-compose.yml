@@ -105,8 +105,9 @@ services:
       context: ./frontend-monolith
       args:
         # Rutas relativas: las resuelve nginx en tiempo de ejecución.
-        VITE_ENDORSE_API_BASE: /endorse-api
-        VITE_ROUTES_API_BASE: /routes-api
+        # En la nube se sobreescriben con las URLs públicas de cada backend.
+        VITE_API_ENDORSEMENTS_URL: /endorse-api
+        VITE_API_ROUTES_URL: /routes-api
     image: interseguro/frontend-monolith:local
     container_name: interseguro-frontend
     ports:

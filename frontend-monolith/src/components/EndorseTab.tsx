@@ -20,61 +20,79 @@ const EXAMPLE_REQUEST: EndorseTranslateRequest = {
   fechaEfectiva: '2025-09-01',
 };
 
-type TextFieldKey = Exclude<
-  keyof EndorseTranslateRequest,
-  'idEnvio' | 'fechaSolicitud' | 'fechaCliente' | 'fechaEfectiva'
->;
+const EXAMPLE_JSON = JSON.stringify(EXAMPLE_REQUEST, null, 2);
 
-const TEXT_FIELDS: ReadonlyArray<{ key: TextFieldKey; label: string; placeholder: string }> = [
-  { key: 'policyNumber', label: 'Número de póliza', placeholder: '08200000049' },
-  { key: 'producto', label: 'Producto', placeholder: 'Rumbo' },
-  { key: 'tipoEndoso', label: 'Tipo de endoso', placeholder: 'CambioFrecuencia' },
-  { key: 'plan', label: 'Plan', placeholder: 'PlanRumbo' },
-  { key: 'frecuencia', label: 'Frecuencia de pago', placeholder: 'Semestral' },
-  { key: 'moneda', label: 'Moneda', placeholder: 'Nuevo Sol' },
-  { key: 'usuario', label: 'Usuario', placeholder: 'interface.servicios' },
+const REQUIRED_KEYS: ReadonlyArray<keyof EndorseTranslateRequest> = [
+  'policyNumber',
+  'idEnvio',
+  'frecuencia',
+  'tipoEndoso',
+  'producto',
+  'plan',
+  'moneda',
+  'usuario',
+  'fechaSolicitud',
+  'fechaCliente',
+  'fechaEfectiva',
 ];
 
-const DATE_FIELDS: ReadonlyArray<{
-  key: 'fechaSolicitud' | 'fechaCliente' | 'fechaEfectiva';
-  label: string;
-}> = [
-  { key: 'fechaSolicitud', label: 'Fecha de solicitud' },
-  { key: 'fechaCliente', label: 'Fecha del cliente' },
-  { key: 'fechaEfectiva', label: 'Fecha efectiva' },
-];
+const isBlank = (value: unknown): boolean =>
+  value === undefined || value === null || String(value).trim() === '';
+
+/**
+ * Lee y tipa el JSON plano del textarea antes de llamar al backend.
+ *
+ * El backend vuelve a validar con Joi (fuente de verdad); esto solo da feedback
+ * inmediato en la UI para campos ausentes o JSON mal formado. Se construye el
+ * objeto campo a campo para no propagar `unknown` al contrato tipado.
+ */
+function parseRequest(raw: string): EndorseTranslateRequest {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    throw new ApiError(0, 'INVALID_JSON', 'El texto no es un JSON válido.');
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new ApiError(0, 'INVALID_PAYLOAD', 'El JSON de entrada debe ser un objeto.');
+  }
+
+  const record = parsed as Record<string, unknown>;
+  const missing = REQUIRED_KEYS.filter((key) => isBlank(record[key]));
+  if (missing.length > 0) {
+    throw new ApiError(0, 'MISSING_FIELDS', `Faltan campos obligatorios: ${missing.join(', ')}`);
+  }
+
+  const idEnvio = record.idEnvio;
+  if (typeof idEnvio !== 'number' || !Number.isInteger(idEnvio)) {
+    throw new ApiError(0, 'INVALID_ID_ENVIO', 'idEnvio debe ser un número entero.');
+  }
+
+  return {
+    policyNumber: String(record.policyNumber),
+    idEnvio,
+    frecuencia: String(record.frecuencia),
+    tipoEndoso: String(record.tipoEndoso),
+    producto: String(record.producto),
+    plan: String(record.plan),
+    moneda: String(record.moneda),
+    usuario: String(record.usuario),
+    fechaSolicitud: String(record.fechaSolicitud),
+    fechaCliente: String(record.fechaCliente),
+    fechaEfectiva: String(record.fechaEfectiva),
+  };
+}
 
 export function EndorseTab() {
-  const [form, setForm] = useState<EndorseTranslateRequest>(EXAMPLE_REQUEST);
+  const [rawInput, setRawInput] = useState<string>(EXAMPLE_JSON);
   const [result, setResult] = useState<CoreEndorsePayload | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [elapsedMs, setElapsedMs] = useState<number | null>(null);
 
-  // Se evita `{ ...previous, [key]: value }`: TypeScript no conserva el tipo
-  // exacto con claves computadas de unión. Copiar y asignar es type-safe.
-  const setField = (key: TextFieldKey, value: string): void => {
-    setForm((previous) => {
-      const next: EndorseTranslateRequest = { ...previous };
-      next[key] = value;
-      return next;
-    });
-  };
-
-  const setDate = (key: 'fechaSolicitud' | 'fechaCliente' | 'fechaEfectiva', value: string): void => {
-    setForm((previous) => {
-      const next: EndorseTranslateRequest = { ...previous };
-      next[key] = value;
-      return next;
-    });
-  };
-
-  const setIdEnvio = (value: number): void => {
-    setForm((previous) => ({ ...previous, idEnvio: value }));
-  };
-
   const reset = (): void => {
-    setForm(EXAMPLE_REQUEST);
+    setRawInput(EXAMPLE_JSON);
     setResult(null);
     setError(null);
     setElapsedMs(null);
@@ -82,20 +100,33 @@ export function EndorseTab() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    setIsLoading(true);
     setError(null);
+    setResult(null);
 
+    let payload: EndorseTranslateRequest;
+    try {
+      payload = parseRequest(rawInput);
+    } catch (caught) {
+      setElapsedMs(null);
+      setError(
+        caught instanceof ApiError
+          ? caught
+          : new ApiError(0, 'INVALID_PAYLOAD', 'El JSON de entrada no es válido.'),
+      );
+      return;
+    }
+
+    setIsLoading(true);
     try {
       const startedAt = performance.now();
-      const payload = await authorizedPost<CoreEndorsePayload>(
+      const response = await authorizedPost<CoreEndorsePayload>(
         ENDORSE_API_BASE,
         '/v1/endorse/translate',
-        form,
+        payload,
       );
       setElapsedMs(performance.now() - startedAt);
-      setResult(payload);
+      setResult(response);
     } catch (caught) {
-      setResult(null);
       setElapsedMs(null);
       setError(
         caught instanceof ApiError
@@ -112,56 +143,28 @@ export function EndorseTab() {
       <form className="card" onSubmit={(event) => void handleSubmit(event)}>
         <header className="card-header">
           <div>
-            <h2>Datos del endoso</h2>
+            <h2>JSON plano del endoso</h2>
             <p className="muted">
-              JSON plano de entrada. Etiquetas, orden, constantes y eventos se resuelven
-              desde la plantilla en base de datos.
+              Edita el payload de entrada. Las etiquetas, el orden, las constantes y los
+              eventos se resuelven desde la plantilla en base de datos.
             </p>
           </div>
         </header>
 
-        <div className="form-grid">
-          {TEXT_FIELDS.map((field) => (
-            <label key={field.key} className="field">
-              <span>{field.label}</span>
-              <input
-                type="text"
-                value={form[field.key]}
-                placeholder={field.placeholder}
-                onChange={(event) => setField(field.key, event.target.value)}
-                required
-              />
-            </label>
-          ))}
-
-          <label className="field">
-            <span>ID de envío</span>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={form.idEnvio}
-              onChange={(event) => setIdEnvio(Number.parseInt(event.target.value, 10) || 0)}
-              required
-            />
-          </label>
-
-          {DATE_FIELDS.map((field) => (
-            <label key={field.key} className="field">
-              <span>{field.label}</span>
-              <input
-                type="date"
-                value={form[field.key]}
-                onChange={(event) => setDate(field.key, event.target.value)}
-                required
-              />
-            </label>
-          ))}
-        </div>
+        <label className="field">
+          <span>Payload de entrada (JSON)</span>
+          <textarea
+            className="code-input"
+            rows={22}
+            value={rawInput}
+            onChange={(event) => setRawInput(event.target.value)}
+            spellCheck={false}
+          />
+        </label>
 
         <div className="form-actions">
           <button type="submit" className="primary-button" disabled={isLoading}>
-            {isLoading ? 'Traduciendo…' : 'Traducir endoso'}
+            {isLoading ? 'Traduciendo…' : 'Traducir'}
           </button>
           <button type="button" className="ghost-button" onClick={reset} disabled={isLoading}>
             Restaurar ejemplo
@@ -174,10 +177,10 @@ export function EndorseTab() {
       <section className="card">
         <header className="card-header">
           <div>
-            <h2>JSON para el core</h2>
+            <h2>JSON estructurado para el core</h2>
             <p className="muted">
-              Contrato de salida ordenado según la plantilla. El core no interpreta el orden
-              de las claves: recibe arrays explícitos.
+              Respuesta ordenada según la plantilla. El core recibe arrays explícitos, no
+              el orden de claves de un objeto.
             </p>
           </div>
           {elapsedMs !== null && <span className="badge">{elapsedMs.toFixed(0)} ms</span>}
@@ -192,16 +195,13 @@ export function EndorseTab() {
               <span className="chip">{result.currency.description}</span>
             </div>
             <JsonBlock value={result} label="Respuesta" />
-            <details className="details">
-              <summary>Ver request enviado</summary>
-              <JsonBlock value={form} label="Request" />
-            </details>
           </>
         ) : (
           <div className="empty-state">
-            <p>Envía el formulario para ver la traducción.</p>
+            <p>Pulsa «Traducir» para ver el JSON estructurado.</p>
             <p className="muted">
-              Se solicita un JWT de demo al backend automáticamente antes de cada llamada.
+              El frontend solicita un JWT de demo al backend y lo envía en el header
+              Authorization antes de cada llamada.
             </p>
           </div>
         )}

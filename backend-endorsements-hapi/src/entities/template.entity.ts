@@ -10,7 +10,7 @@ export interface TemplateFieldDefinition {
   source: TemplateFieldSource;
   /** Campo del JSON plano del que se toma el valor cuando source = INPUT. */
   sourceKey: string | null;
-  /** Valor fijo cuando source = CONSTANT (ej. TES008, Endoso Simple). */
+  /** Valor fijo cuando source = CONSTANT (código de negocio o texto literal). */
   constantValue: string | null;
   /**
    * Valor por defecto cuando source = INPUT y el input no trae el campo, o

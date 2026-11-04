@@ -66,7 +66,7 @@ export function mapToCorePayload(
 
 /**
  * Resuelve el valor de un campo según su origen configurado en BD.
- * - CONSTANT: valor fijo de la plantilla (ej. TES008).
+ * - CONSTANT: valor fijo definido en la plantilla (nunca en el código).
  * - DEFAULT: valor literal (ej. "Default" o "").
  * - INPUT: campo del request; si falta usa default_value si existe.
  */

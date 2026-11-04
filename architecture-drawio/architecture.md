@@ -421,6 +421,21 @@ siguientes razones:
 - **Cloud Scheduler** para reconciliación.
 - **Secret Manager + mTLS** para seguridad.
 
+#### Comparación de costo (orden de magnitud, tráfico bajo/medio)
+
+| Componente | Opción A (elegida) — proporcional | Opción B (descartada) — Kafka + K8s |
+|---|---|---|
+| Ingesta / cola | **Cloud Pub/Sub**: ~$0.04 por millón de mensajes | **Confluent Cloud Kafka**: desde ~$250/mes (cluster básico) |
+| Procesamiento | **Cloud Run** (scale-to-zero): ~$0–15/mes con poco tráfico | **GKE Autopilot**: ~$70/mes de base + nodos |
+| Base de estado | **Cloud SQL Postgres** pequeño: ~$10–25/mes | PostgreSQL gestionado en clúster: ~$100+/mes |
+| Observabilidad | Cloud Logging/Monitoring (incluido, capas gratuitas) | Stack propio en K8s: ~$30–50/mes |
+| Operación | **Serverless, sin servidores ni equipo SRE** | Requiere equipo de plataforma dedicado |
+| **Total estimado** | **~$15–50/mes** | **~$450–500/mes** |
+
+> Diseñé para el volumen real, no para el volumen imaginado. Pub/Sub + Cloud Run
+> resuelve el problema con ~10% del costo de un stack Kafka/K8s; añadir
+> complejidad sin demanda es deuda técnica disfrazada de escalabilidad.
+
 > Menos puede ser más: la arquitectura más barata es la que no hay que
 > operar. Si el volumen crece 100x, se puede migrar a Kafka/K8s con el mismo
 > contrato de eventos; la decisión es reversible.

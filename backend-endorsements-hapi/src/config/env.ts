@@ -8,6 +8,7 @@ export interface AppConfig {
   dbName: string;
   dbSynchronize: boolean;
   dbLogging: boolean;
+  dbSsl: boolean;
   jwtSecret: string;
   jwtTtlSeconds: number;
   enableDemoToken: boolean;
@@ -46,6 +47,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dbName: env.DB_NAME ?? 'endorsements',
     dbSynchronize: parseBoolean(env.DB_SYNCHRONIZE, true),
     dbLogging: parseBoolean(env.DB_LOGGING, false),
+    // Postgres gestionado (Render, Cloud SQL por IP pública) exige TLS.
+    dbSsl: parseBoolean(env.DB_SSL, false),
     jwtSecret,
     jwtTtlSeconds: parseNumber(env.JWT_TTL_SECONDS, 3600),
     enableDemoToken: parseBoolean(env.ENABLE_DEMO_TOKEN, true),

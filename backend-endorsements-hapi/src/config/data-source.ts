@@ -26,6 +26,9 @@ export function createDataSource(): DataSource {
       TemplateFieldModel,
       TemplateEventModel,
     ],
+    // Render y Cloud SQL por IP pública exigen TLS. En local (Postgres en
+    // Docker) se deja desactivado para no exigir certificados.
+    ssl: config.dbSsl ? { rejectUnauthorized: false } : false,
     // synchronize=true es aceptable para el reto (BD efímera). En producción
     // se usarían migraciones versionadas.
     synchronize: config.dbSynchronize,

@@ -53,9 +53,9 @@ const isoDateString = Joi.string()
     'date.invalid': '{{#label}} debe ser una fecha ISO válida con formato YYYY-MM-DD',
   });
 
-// Contrato de entrada validado en el borde. Los campos que no vienen en el
-// JSON plano del ejemplo (TES008, SAC, etc.) NO se piden aquí: se resuelven
-// desde la plantilla en BD.
+// Contrato de entrada validado en el borde. Los valores fijos del negocio
+// (códigos, responsables, textos) NO se piden aquí: se resuelven desde la
+// plantilla en BD, por lo que agregar un producto no toca este esquema.
 const endorseTranslatePayload = Joi.object({
   policyNumber: Joi.string().trim().min(1).required(),
   idEnvio: Joi.number().integer().positive().required(),

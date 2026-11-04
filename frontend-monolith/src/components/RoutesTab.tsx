@@ -5,67 +5,46 @@ import type { Graph, OptimalRouteResponse } from '../types';
 import { ErrorPanel } from './ErrorPanel';
 import { JsonBlock } from './JsonBlock';
 
-// Grafo de ejemplo con la trampa del enunciado: ninguna arista declara "E"
-// como origen; E solo aparece como destino. Si el backend tratara el grafo
-// como dirigido, E no tendría salidas y todas las bases serían inalcanzables.
-// Al normalizar a NO dirigido: C -> D -> E = 10 y A -> B -> E = 21, gana C.
-const EXAMPLE_GRAPH: Graph = {
-  A: { B: 12 },
-  B: { C: 5, E: 9 },
-  C: { D: 7 },
-  D: { E: 3 },
+// Red de distritos de Lima del enunciado. El grafo viaja en el payload: el
+// backend no conoce esta red, por lo que cambiar el mapa no toca el algoritmo.
+const LIMA_GRAPH: Graph = {
+  Miraflores: { 'San Isidro': 7, Barranco: 3 },
+  'San Isidro': { Miraflores: 7, Lince: 4 },
+  Barranco: { Miraflores: 3, Surco: 5 },
+  Lince: { 'San Isidro': 4, Surco: 6 },
+  Surco: { Barranco: 5, Lince: 6, Ate: 10 },
+  Ate: { Surco: 10 },
 };
 
-const EXAMPLE_DEPOTS = 'A, C';
-const EXAMPLE_ACCIDENT = 'E';
+// Lista estable y ordenada: el backend desempata por el orden de `depots`, así
+// que el resultado es determinista para una selección dada.
+const DISTRICTS: readonly string[] = Object.keys(LIMA_GRAPH).sort((a, b) =>
+  a.localeCompare(b, 'es'),
+);
 
-function parseGraph(raw: string): Graph {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw) as unknown;
-  } catch {
-    throw new ApiError(0, 'INVALID_GRAPH_JSON', 'El grafo no es un JSON válido.');
-  }
-
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new ApiError(0, 'INVALID_GRAPH', 'El grafo debe ser un objeto { nodo: { vecino: costo } }.');
-  }
-
-  const entries = Object.entries(parsed as Record<string, unknown>);
-  if (entries.length === 0) {
-    throw new ApiError(0, 'INVALID_GRAPH', 'El grafo no puede estar vacío.');
-  }
-
-  const graph: Graph = {};
-  for (const [node, neighbors] of entries) {
-    if (typeof neighbors !== 'object' || neighbors === null || Array.isArray(neighbors)) {
-      throw new ApiError(0, 'INVALID_GRAPH', `Los vecinos de "${node}" deben ser un objeto.`);
-    }
-    const normalized: Record<string, number> = {};
-    for (const [neighbor, cost] of Object.entries(neighbors as Record<string, unknown>)) {
-      if (typeof cost !== 'number' || !Number.isFinite(cost)) {
-        throw new ApiError(0, 'INVALID_GRAPH', `El costo "${node}" → "${neighbor}" debe ser numérico.`);
-      }
-      normalized[neighbor] = cost;
-    }
-    graph[node] = normalized;
-  }
-  return graph;
-}
+const DEFAULT_ACCIDENT = 'San Isidro';
+const DEFAULT_DEPOTS: readonly string[] = ['Miraflores', 'Ate'];
 
 export function RoutesTab() {
-  const [accidentLocation, setAccidentLocation] = useState(EXAMPLE_ACCIDENT);
-  const [depotsText, setDepotsText] = useState(EXAMPLE_DEPOTS);
-  const [graphText, setGraphText] = useState(JSON.stringify(EXAMPLE_GRAPH, null, 2));
+  const [accidentLocation, setAccidentLocation] = useState<string>(DEFAULT_ACCIDENT);
+  const [selectedDepots, setSelectedDepots] = useState<readonly string[]>(DEFAULT_DEPOTS);
   const [result, setResult] = useState<OptimalRouteResponse | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [elapsedMs, setElapsedMs] = useState<number | null>(null);
 
+  const toggleDepot = (depot: string, checked: boolean): void => {
+    setSelectedDepots((previous) => {
+      if (checked) {
+        return previous.includes(depot) ? previous : [...previous, depot];
+      }
+      return previous.filter((item) => item !== depot);
+    });
+  };
+
   const reset = (): void => {
-    setAccidentLocation(EXAMPLE_ACCIDENT);
-    setDepotsText(EXAMPLE_DEPOTS);
-    setGraphText(JSON.stringify(EXAMPLE_GRAPH, null, 2));
+    setAccidentLocation(DEFAULT_ACCIDENT);
+    setSelectedDepots(DEFAULT_DEPOTS);
     setResult(null);
     setError(null);
     setElapsedMs(null);
@@ -74,29 +53,15 @@ export function RoutesTab() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     setError(null);
+    setResult(null);
 
-    const depots = depotsText
-      .split(',')
-      .map((depot) => depot.trim())
-      .filter((depot) => depot.length > 0);
+    // Se envía en el orden canónico de distritos para que el empate sea
+    // determinista, independientemente del orden de clic del usuario.
+    const depots = DISTRICTS.filter((district) => selectedDepots.includes(district));
 
     if (depots.length === 0) {
-      setResult(null);
-      setError(new ApiError(0, 'INVALID_DEPOTS', 'Indica al menos una base de grúas.'));
-      return;
-    }
-
-    let graph: Graph;
-    try {
-      graph = parseGraph(graphText);
-    } catch (caught) {
-      setResult(null);
       setElapsedMs(null);
-      setError(
-        caught instanceof ApiError
-          ? caught
-          : new ApiError(0, 'INVALID_GRAPH', 'El grafo no es válido.'),
-      );
+      setError(new ApiError(0, 'INVALID_DEPOTS', 'Selecciona al menos una base de grúas.'));
       return;
     }
 
@@ -106,12 +71,11 @@ export function RoutesTab() {
       const response = await authorizedPost<OptimalRouteResponse>(
         ROUTES_API_BASE,
         '/v1/routes/optimal',
-        { accidentLocation: accidentLocation.trim(), depots, graph },
+        { accidentLocation, depots, graph: LIMA_GRAPH },
       );
       setElapsedMs(performance.now() - startedAt);
       setResult(response);
     } catch (caught) {
-      setResult(null);
       setElapsedMs(null);
       setError(
         caught instanceof ApiError
@@ -128,52 +92,57 @@ export function RoutesTab() {
       <form className="card" onSubmit={(event) => void handleSubmit(event)}>
         <header className="card-header">
           <div>
-            <h2>Red de grúas</h2>
+            <h2>Red de grúas de Lima</h2>
             <p className="muted">
               El grafo se interpreta como <strong>no dirigido</strong>: declarar una sola
-              dirección habilita ambos sentidos. Se evalúan todas las bases.
+              dirección habilita ambos sentidos. El backend evalúa todas las bases y se
+              queda con la más cercana alcanzable.
             </p>
           </div>
         </header>
 
-        <div className="form-grid">
-          <label className="field">
-            <span>Ubicación del siniestro</span>
-            <input
-              type="text"
-              value={accidentLocation}
-              onChange={(event) => setAccidentLocation(event.target.value)}
-              placeholder="E"
-              required
-            />
-          </label>
-
-          <label className="field">
-            <span>Bases de grúas (separadas por coma)</span>
-            <input
-              type="text"
-              value={depotsText}
-              onChange={(event) => setDepotsText(event.target.value)}
-              placeholder="A, C"
-              required
-            />
-          </label>
-        </div>
-
         <label className="field">
-          <span>Grafo de la red (JSON)</span>
-          <textarea
-            className="code-input"
-            rows={14}
-            value={graphText}
-            onChange={(event) => setGraphText(event.target.value)}
-            spellCheck={false}
-          />
+          <span>Ubicación del accidente</span>
+          <select
+            value={accidentLocation}
+            onChange={(event) => setAccidentLocation(event.target.value)}
+            required
+          >
+            {DISTRICTS.map((district) => (
+              <option key={district} value={district}>
+                {district}
+              </option>
+            ))}
+          </select>
         </label>
+
+        <fieldset className="checkbox-fieldset">
+          <legend>Bases de grúas disponibles</legend>
+          <div className="checkbox-grid">
+            {DISTRICTS.map((district) => {
+              const isAccident = district === accidentLocation;
+              return (
+                <label key={district} className="checkbox-item">
+                  <input
+                    type="checkbox"
+                    checked={selectedDepots.includes(district)}
+                    onChange={(event) => toggleDepot(district, event.target.checked)}
+                  />
+                  <span>{district}</span>
+                  {isAccident && <span className="checkbox-hint">siniestro</span>}
+                </label>
+              );
+            })}
+          </div>
+          <p className="muted">
+            Marca una o varias bases. Si una base está en el mismo distrito del siniestro,
+            la distancia es 0 y el camino es ese distrito.
+          </p>
+        </fieldset>
 
         <div className="form-actions">
           <button type="submit" className="primary-button" disabled={isLoading}>
-            {isLoading ? 'Calculando…' : 'Calcular ruta óptima'}
+            {isLoading ? 'Calculando…' : 'Calcular Ruta Óptima'}
           </button>
           <button type="button" className="ghost-button" onClick={reset} disabled={isLoading}>
             Restaurar ejemplo
@@ -181,6 +150,11 @@ export function RoutesTab() {
         </div>
 
         {error && <ErrorPanel error={error} />}
+
+        <details className="details">
+          <summary>Ver red enviada al backend (JSON)</summary>
+          <JsonBlock value={LIMA_GRAPH} label="graph" />
+        </details>
       </form>
 
       <section className="card">
@@ -229,10 +203,10 @@ export function RoutesTab() {
           </>
         ) : (
           <div className="empty-state">
-            <p>Calcula la ruta para ver la base y el camino mínimo.</p>
+            <p>Selecciona el siniestro y las bases, y calcula la ruta.</p>
             <p className="muted">
-              Prueba el ejemplo: accidente en E, bases A y C. Gana C con 10 (C → D → E) frente a
-              A con 21 (A → B → E), aunque ninguna arista declare E como origen.
+              Ejemplo: siniestro en San Isidro con bases Miraflores y Ate. Gana Miraflores con
+              distancia 7.
             </p>
           </div>
         )}

@@ -7,11 +7,12 @@ RUN npm ci --no-audit --no-fund
 
 COPY . .
 
-# Las bases son relativas por defecto; se pueden sobreescribir en build.
-ARG VITE_ENDORSE_API_BASE=/endorse-api
-ARG VITE_ROUTES_API_BASE=/routes-api
-ENV VITE_ENDORSE_API_BASE=$VITE_ENDORSE_API_BASE
-ENV VITE_ROUTES_API_BASE=$VITE_ROUTES_API_BASE
+# Las bases son relativas por defecto; en la nube se sobreescriben con las
+# URLs públicas de cada backend (build args).
+ARG VITE_API_ENDORSEMENTS_URL=/endorse-api
+ARG VITE_API_ROUTES_URL=/routes-api
+ENV VITE_API_ENDORSEMENTS_URL=$VITE_API_ENDORSEMENTS_URL
+ENV VITE_API_ROUTES_URL=$VITE_API_ROUTES_URL
 
 RUN npm run build
 
