@@ -333,120 +333,107 @@ y el navegador hace CORS directo contra cada backend** — por eso ambos backend
 
 ---
 
-## 8. Despliegue en la nube (paso a paso, GCP Cloud Run)
+## 8. Despliegue en GCP (Cloud Run + Neon) — borrador validado en local
 
-> Guía reproducible. **No ejecutada en este entorno** (no hay proyecto GCP ni credenciales disponibles).
+> **Estado:** artefactos creados y validados con dry checks locales; **no ejecutados contra GCP**.
+> La Fase 4 (CORS/seguridad) y la Fase 5 (documentación) todavía pueden ajustar variables y
+> orígenes, por eso el script está parametrizado y sin secretos hardcodeados.
 
-### 8.1 Variables y prerequisitos
+### 8.1 Arquitectura
+
+```
+Navegador
+   │  HTTPS
+   ▼
+Cloud Run: frontend (nginx + SPA React, puerto 8080)
+   │  fetch a URLs absolutas (VITE_* horneadas en build)
+   ├──► Cloud Run: endorsements (Node/Hapi, 8082) ──┐
+   └──► Cloud Run: routes (Go distroless, 8081)     │ TLS (DB_SSL=true)
+                                                    ▼
+                                      Neon Postgres (externo a GCP)
+                                      · endpoint pooled  → runtime Cloud Run
+                                      · endpoint directo → bootstrap/seed
+```
+
+- **Tres servicios de Cloud Run** y **Neon** como Postgres administrado. En producción **no existe**
+  el contenedor `seed` del compose: el bootstrap se ejecuta una vez contra el endpoint **directo**.
+- **No se usa Cloud SQL**: nada de `--add-cloudsql-instances` ni `/cloudsql/...`; la conexión es por
+  host público con `DB_SSL=true` (Neon rechaza conexiones sin TLS).
+- El frontend **no** usa el proxy interno de nginx en la nube: se compila con las URLs absolutas de
+  cada backend y CORS se configura en ellos. El proxy se conserva solo para `docker compose`.
+
+### 8.2 Variables de entorno requeridas
+
+| Variable | Obligatoria | Uso | Nota |
+|---|---|---|---|
+| `PROJECT_ID` | sí | Proyecto GCP | Por defecto `reto-tecnico-interseguro` |
+| `REGION` | sí | Región Cloud Run / Artifact Registry | Por defecto `us-central1` |
+| `AR_REPO` | sí | Repositorio Artifact Registry | Por defecto `interseguro-reto` |
+| `TAG` | no | Tag de imágenes | Por defecto `git rev-parse --short HEAD` |
+| `DB_HOST_POOLED` | sí | Host Neon con `-pooler` | Runtime: muchas conexiones cortas |
+| `DB_HOST_DIRECT` | sí | Host Neon sin `-pooler` | Solo `bootstrap-db`: una conexión larga |
+| `DB_PORT` | no | Puerto Postgres | `5432` |
+| `DB_NAME` | sí | Base de datos | — |
+| `DB_USER` | sí | Usuario de Neon | — |
+| `DB_PASSWORD` | sí | Contraseña | **Nunca en el repo**; va a Secret Manager (`db-password`) |
+| `JWT_SECRET` | sí | Firma HS256 (≥16) | **Nunca en el repo**; Secret Manager (`jwt-secret`) |
+| `SECRET_JWT`, `SECRET_DB_PASSWORD` | no | Nombres de secretos | `jwt-secret`, `db-password` |
+| `ENABLE_DEMO_TOKEN` | no | Emisor de token demo | **Placeholder Fase 4** (hoy `true`) |
+| `CORS_ORIGINS`, `CORS_ORIGIN` | no | Origen permitido | **Placeholder Fase 4** (hoy `*`) |
+| `MAX_INSTANCES` | no | Tope de réplicas | `3`, para no agotar conexiones de Neon |
+
+`PORT`, `NODE_ENV`, `DB_SSL` y `DB_SYNCHRONIZE` no se pasan a mano: Cloud Run inyecta `PORT`; la
+imagen fija `NODE_ENV=production`; el script envía `DB_SSL=true` y `DB_SYNCHRONIZE=false` al servicio.
+
+### 8.3 Orden de ejecución
 
 ```bash
-export PROJECT_ID="<tu-proyecto>"
+export PROJECT_ID="reto-tecnico-interseguro"
 export REGION="us-central1"
-export REPO="interseguro"
-gcloud config set project "$PROJECT_ID"
-gcloud services enable run.googleapis.com sqladmin.googleapis.com \
-  artifactregistry.googleapis.com cloudbuild.googleapis.com
-gcloud artifacts repositories create "$REPO" \
-  --repository-format=docker --location="$REGION"
-gcloud auth configure-docker "$REGION-docker.pkg.dev"
-```
-
-Genera un secreto real (mínimo 16 caracteres; ambos backends deben compartir el mismo si el frontend
-usa tokens de demo, o usar el IdP):
-
-```bash
+export DB_HOST_POOLED="ep-xxx-pooler.us-east-1.aws.neon.tech"   # runtime
+export DB_HOST_DIRECT="ep-xxx.us-east-1.aws.neon.tech"          # bootstrap
+export DB_NAME="endorsements"
+export DB_USER="<usuario>"
+export DB_PASSWORD="<password>"        # solo entorno, nunca commit
 export JWT_SECRET="$(openssl rand -hex 32)"
+
+./deploy-gcp.sh all
 ```
 
-### 8.2 Base de datos
+Paso a paso (equivalente y depurable):
 
 ```bash
-gcloud sql instances create interseguro-pg \
-  --database-version=POSTGRES_16 --tier=db-f1-micro --region="$REGION"
-gcloud sql databases create endorsements --instance=interseguro-pg
-export DB_PASSWORD='<password-fuerte>'
-gcloud sql users set-password postgres --instance=interseguro-pg --password="$DB_PASSWORD"
+./deploy-gcp.sh preflight       # billing + 5 APIs
+./deploy-gcp.sh ensure-ar       # Artifact Registry
+./deploy-gcp.sh ensure-secrets  # jwt-secret / db-password en Secret Manager
+./deploy-gcp.sh bootstrap-db    # esquema + seed contra Neon (endpoint directo)
+./deploy-gcp.sh build           # imágenes de endorsements y routes
+./deploy-gcp.sh deploy          # backends + frontend (captura URLs)
+./deploy-gcp.sh urls            # imprime las URLs públicas
 ```
 
-### 8.3 Imágenes
+### 8.4 Qué hace cada subcomando
+
+| Subcomando | Acción |
+|---|---|
+| `preflight` | Verifica billing y habilita `run`, `artifactregistry`, `secretmanager`, `sqladmin`, `cloudbuild` |
+| `ensure-ar` | Crea `interseguro-reto` si no existe y configura `docker` |
+| `ensure-secrets` | Crea/actualiza `jwt-secret` y `db-password` desde el entorno |
+| `bootstrap-db` | `npm ci` + `npm run seed` con `DB_SYNCHRONIZE=true`, **una sola vez** |
+| `build` | `gcloud builds submit` de endorsements y routes (`.gcloudignore` evita subir `node_modules`/`dist`) |
+| `deploy` | Cloud Run de backends (secretos) y frontend (build-args Vite vía `cloudbuild-frontend.yaml`) |
+| `urls`, `logs [svc]` | Inspección de URLs y logs |
+
+### 8.5 Verificación post-despliegue
 
 ```bash
-gcloud builds submit backend-endorsements-hapi \
-  --tag "$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/endorsements:1.0.0"
+./deploy-gcp.sh urls
+curl -s "$URL_ENDORSEMENTS/health"
+curl -s "$URL_ROUTES/health"
 
-gcloud builds submit backend-routes-golang \
-  --tag "$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/routes:1.0.0"
-```
-
-### 8.4 Reto 1 en Cloud Run
-
-```bash
-gcloud run deploy endorsements \
-  --image "$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/endorsements:1.0.0" \
-  --region "$REGION" --allow-unauthenticated --port 8082 \
-  --add-cloudsql-instances "$PROJECT_ID:$REGION:interseguro-pg" \
-  --set-env-vars "DB_HOST=/cloudsql/$PROJECT_ID:$REGION:interseguro-pg,DB_PORT=5432,DB_USER=postgres,DB_PASSWORD=$DB_PASSWORD,DB_NAME=endorsements,DB_SYNCHRONIZE=true,JWT_SECRET=$JWT_SECRET,JWT_TTL_SECONDS=3600,ENABLE_DEMO_TOKEN=true,CORS_ORIGINS=*"
-```
-
-> En producción: `DB_SYNCHRONIZE=false` + migraciones, `ENABLE_DEMO_TOKEN=false` y `CORS_ORIGINS`
-> con el dominio exacto del frontend.
-
-### 8.5 Semilla (Job, una vez)
-
-```bash
-gcloud run jobs create seed-endorsements \
-  --image "$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/endorsements:1.0.0" \
-  --region "$REGION" --command "node" --args "dist/seed/seed.js" \
-  --add-cloudsql-instances "$PROJECT_ID:$REGION:interseguro-pg" \
-  --set-env-vars "DB_HOST=/cloudsql/$PROJECT_ID:$REGION:interseguro-pg,DB_USER=postgres,DB_PASSWORD=$DB_PASSWORD,DB_NAME=endorsements,DB_SYNCHRONIZE=true,JWT_SECRET=$JWT_SECRET"
-
-gcloud run jobs execute seed-endorsements --region "$REGION" --wait
-```
-
-### 8.6 Reto 2 en Cloud Run
-
-```bash
-gcloud run deploy routes \
-  --image "$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/routes:1.0.0" \
-  --region "$REGION" --allow-unauthenticated --port 8081 \
-  --set-env-vars "JWT_SECRET=$JWT_SECRET,JWT_TTL_MINUTES=60,ENABLE_DEMO_TOKEN=true,CORS_ORIGIN=*"
-```
-
-### 8.7 Frontend (URLs absolutas + CORS)
-
-```bash
-export ENDORSE_URL="$(gcloud run services describe endorsements --region "$REGION" --format='value(status.url)')"
-export ROUTES_URL="$(gcloud run services describe routes --region "$REGION" --format='value(status.url)')"
-
-# Build con los args del Dockerfile (las VITE_* son build-time: si cambian las
-# URLs hay que reconstruir la imagen, no basta con reiniciar el servicio).
-docker build --platform linux/amd64 \
-  --build-arg VITE_API_ENDORSEMENTS_URL="$ENDORSE_URL" \
-  --build-arg VITE_API_ROUTES_URL="$ROUTES_URL" \
-  -t "$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/frontend:1.0.0" frontend-monolith
-docker push "$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/frontend:1.0.0"
-
-gcloud run deploy frontend \
-  --image "$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/frontend:1.0.0" \
-  --region "$REGION" --allow-unauthenticated --port 8080
-```
-
-Finalmente, restringe CORS al origen del frontend:
-
-```bash
-FRONTEND_URL="$(gcloud run services describe frontend --region "$REGION" --format='value(status.url)')"
-gcloud run services update endorsements --region "$REGION" --update-env-vars "CORS_ORIGINS=$FRONTEND_URL"
-gcloud run services update routes --region "$REGION" --update-env-vars "CORS_ORIGIN=$FRONTEND_URL"
-```
-
-### 8.8 Verificación post-despliegue
-
-```bash
-curl -s "$ENDORSE_URL/health" && curl -s "$ROUTES_URL/health"
-
-TOKEN=$(curl -s -X POST "$ENDORSE_URL/v1/auth/token" -H 'Content-Type: application/json' -d '{}' \
+TOKEN=$(curl -s -X POST "$URL_ENDORSEMENTS/v1/auth/token" -H 'Content-Type: application/json' -d '{}' \
   | sed -E 's/.*"token":"([^"]+)".*/\1/')
-curl -s -X POST "$ENDORSE_URL/v1/endorse/translate" \
+curl -s -X POST "$URL_ENDORSEMENTS/v1/endorse/translate" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"policyNumber":"08200000049","idEnvio":5984,"frecuencia":"Semestral",
        "tipoEndoso":"CambioFrecuencia","producto":"Rumbo","plan":"PlanRumbo",
@@ -454,7 +441,23 @@ curl -s -X POST "$ENDORSE_URL/v1/endorse/translate" \
        "fechaSolicitud":"2025-08-27","fechaCliente":"2025-08-27","fechaEfectiva":"2025-09-01"}'
 ```
 
-### 8.9 Alternativa sin GCP (Render / Railway)
+En el navegador: abrir la URL del frontend, pulsar *Traducir* y comprobar en *Network* que la
+llamada sale hacia `https://endorsements-...run.app`, no hacia `/endorse-api`.
+
+### 8.6 Notas honestas y pendientes
+
+- **Latencia Neon ↔ Cloud Run**: con Neon en `us-east-1` y Cloud Run en `us-central1`, cada
+  *round-trip* añade ~15–30 ms. Se mitiga usando el endpoint **pooled** en runtime y reservando el
+  **directo** para el bootstrap.
+- **Sin framework de migraciones**: el esquema se crea con `DB_SYNCHRONIZE=true` una sola vez y
+  después el servicio corre con `DB_SYNCHRONIZE=false`. Versionar migraciones TypeORM sigue pendiente.
+- **CORS y token demo son placeholders de la Fase 4**: hoy `CORS_*='*'` y `ENABLE_DEMO_TOKEN=true`.
+- **`sqladmin.googleapis.com`** se habilita por requisito de la consigna, pero Neon **no** usa Cloud
+  SQL; puede retirarse al cerrar el script.
+- **No ejecutado**: ningún comando de este script se ha lanzado contra GCP en este entorno. La
+  evidencia de la Fase 3 es `bash -n`, `shellcheck`, fallo limpio y parseo del YAML en local.
+
+### 8.7 Alternativa sin GCP (Render / Railway)
 
 1. **Postgres**: *New + → PostgreSQL*. Copiar **host, puerto, usuario, contraseña y base**
    (no la URL completa: TypeORM se configura por campos).
@@ -472,19 +475,19 @@ curl -s -X POST "$ENDORSE_URL/v1/endorse/translate" \
    ENABLE_DEMO_TOKEN=true
    CORS_ORIGINS=*
    ```
-   > `DB_SSL=true` es obligatorio en Render/Cloud SQL por IP pública: sin TLS la conexión se rechaza.
+   > `DB_SSL=true` es obligatorio en Neon y en cualquier Postgres gestionado: sin TLS la conexión se rechaza.
    > `NODE_ENV=production` ya viene en la imagen.
 3. **seed**: *Job* / *one-off command* con la misma imagen: `node dist/seed/seed.js`
    y las mismas variables `DB_*` (se ejecuta una vez).
 4. **routes**: *Web Service* → Docker, root `backend-routes-golang`, puerto 8081,
    variables `JWT_SECRET` (el mismo) y `ENABLE_DEMO_TOKEN=true`.
 5. **frontend**: *Web Service* → Docker, root `frontend-monolith`. Los `VITE_*` son **build-time**:
-   se pasan como *build args* (el [`Dockerfile`](frontend-monolith/Dockerfile:12) ya los declara
+   se pasan como *build args* (el [`Dockerfile`](frontend-monolith/Dockerfile:13) ya los declara
    como `ARG` + `ENV`) apuntando a las URLs públicas de los dos backends.
    > Si se cambia una URL hay que **reconstruir** la imagen; reiniciar el servicio no basta.
    >
    > **Trampa si se omiten**: en Docker Compose los valores por defecto (`/endorse-api`, `/routes-api`)
-   > funcionan porque [`nginx.conf`](frontend-monolith/nginx.conf:1) hace proxy a los nombres de
+   > funcionan porque [`nginx.conf.template`](frontend-monolith/nginx.conf.template:1) hace proxy a los nombres de
    > servicio `endorsements:8082` y `routes:8081`. En Render esos DNS **no existen**, así que una
    > imagen construida sin las URLs absolutas sirve la SPA pero devuelve `502` en cada llamada.
    > Verificación rápida tras el primer deploy: pulsar *Traducir* y comprobar en la pestaña *Network*

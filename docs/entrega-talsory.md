@@ -74,12 +74,36 @@ incorrectos sin lanzar error: grafo dirigido, orden de campos, `'Default'` vs `'
 después la experiencia que permite evaluar los retos en un minuto, y al final la narrativa de
 infraestructura. Preferí terminar tres retos verificables antes que cuatro a medias.
 
+## Despliegue en GCP
+
+El despliegue está **preparado y validado en local, no ejecutado** contra GCP. La arquitectura es
+**Cloud Run × 3** (frontend nginx, endorsements Node/Hapi, routes Go distroless) + **Neon Postgres**
+externo, con dos endpoints: *pooled* para Cloud Run y *directo* para el bootstrap del esquema.
+
+| Variable | Para qué |
+|---|---|
+| `DB_HOST_POOLED` / `DB_HOST_DIRECT` | Conexión Neon (runtime / bootstrap) |
+| `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Credenciales (la contraseña solo por entorno) |
+| `JWT_SECRET` | Firma HS256 (≥16), vía Secret Manager |
+| `PROJECT_ID`, `REGION`, `AR_REPO` | Proyecto, región y Artifact Registry |
+
+Orden: `./deploy-gcp.sh preflight && ./deploy-gcp.sh ensure-ar && ./deploy-gcp.sh ensure-secrets`;
+luego `bootstrap-db` (una sola vez, con `DB_SYNCHRONIZE=true`); después `build`, `deploy` y `urls`.
+El build del frontend pasa las URLs absolutas como `--build-arg` (son build-time) mediante
+`cloudbuild-frontend.yaml`.
+
+Dos notas honestas: (1) con Neon en `us-east-1` y Cloud Run en `us-central1`, cada ida y vuelta
+añade ~15–30 ms, mitigado con el endpoint *pooled*; (2) no hay framework de migraciones: el esquema
+se crea con `synchronize=true` una vez y luego el servicio corre con `false`.
+
 ## Transparencia sobre el estado
 
 - Verificado ejecutando comandos: **20/20 tests** de endosos, `typecheck` y `build` limpios;
-  `go build`, `go vet` y `go test ./...` verdes; build del frontend verde; `docker compose config` válido.
-- **No ejecutado** en este entorno: `docker compose up --build` y el despliegue cloud. La guía de
-  despliegue (GCP Cloud Run, con alternativa Render/Railway) está en el README, paso a paso.
+  `go build`, `go vet` y `go test ./...` verdes; build del frontend verde; `docker compose config`
+  válido y `docker compose up --build` con 4 servicios healthy + seed + smoke end-to-end por nginx.
+- **Despliegue GCP**: `deploy-gcp.sh` y `cloudbuild-frontend.yaml` están creados y validados con
+  dry checks locales (`bash -n`, `shellcheck`, fallo limpio, parseo YAML); **no se han ejecutado**
+  contra GCP. La guía y el orden de comandos están en el README (sección 8).
 - Los diagramas del Reto 3 se entregan en tres formatos: `.drawio` editable, `.png` ya exportado
   (2× y fondo blanco) y Mermaid legible en GitHub. Están redactados en español, conservando en
   inglés solo los términos reservados (`Idempotency-Key`, `202 Accepted`, `PENDING`, `Pub/Sub`, etc.).
