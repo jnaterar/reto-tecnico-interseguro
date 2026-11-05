@@ -33,3 +33,6 @@ Thumbs.db
 
 # Docker local
 *.pid
+
+# Scripts de entorno de deploy
+deploy.env.sh

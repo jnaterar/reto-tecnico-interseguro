@@ -1,0 +1,4 @@
+# Normaliza saltos de línea: los scripts viajan al clonar con LF incluso en Windows.
+# Sin esto, `core.autocrlf=true` convertiría los finales de línea y bash fallaría
+# con "bad interpreter: /usr/bin/env bash^M" al ejecutar deploy-gcp.sh.
+*.sh text eol=lf

@@ -107,6 +107,18 @@ El orden de arranque lo garantizan healthchecks reales, no `sleep`:
 > Resultado: `db`, `endorsements`, `routes` y `frontend` en *healthy* y `seed` en `Exited (0)`; los curls
 > de este README se lanzaron contra ese stack (ver [§12](#12-verificación-ejecutada)).
 
+### Requisitos y compatibilidad (Windows, macOS y Linux)
+
+- **Requisito único:** Docker Desktop. No hace falta instalar Node, Go ni PostgreSQL en el host: todo
+  corre en contenedores.
+- **Comando:** `docker compose up --build` — el mismo, carácter por carácter, en los tres sistemas.
+- `deploy-gcp.sh` y `deploy.env.sh` son **herramientas del autor** para desplegar a GCP; el evaluador
+  **no las necesita** para probar el proyecto (la vía principal es la demo ya desplegada). Solo piden
+  bash —Git Bash o WSL si alguien quiere desplegar desde Windows—, y el `.gitattributes` del repositorio
+  fuerza LF en los `.sh` para que no lleguen con CRLF al clonar.
+- **cURL:** los ejemplos de este documento están en sintaxis bash/zsh; en PowerShell/CMD hay que
+  adaptarlos (ver la nota en [§9](#9-credenciales-y-ejemplos-curl-demo)).
+
 ## 2. Ejecución local (sin Docker)
 
 ```bash
@@ -413,6 +425,9 @@ y el navegador hace CORS directo contra cada backend** — por eso ambos backend
 > contiene URLs reales ni credenciales; valores como `ep-xxx…` o `<usuario>` son lo que se exporta en
 > la terminal del operador, nunca ficheros versionados.
 
+> **Requisito para desplegar:** bash. En Windows se ejecuta desde **Git Bash** o **WSL**; el
+> `.gitattributes` del repositorio fuerza LF en los `.sh`, así que el clon no llega con CRLF.
+
 ### 8.1 Arquitectura
 
 ```
@@ -471,7 +486,7 @@ export PROJECT_ID="reto-tecnico-interseguro"
 export REGION="us-central1"
 export DB_HOST_POOLED="ep-xxx-pooler.us-east-1.aws.neon.tech"   # runtime
 export DB_HOST_DIRECT="ep-xxx.us-east-1.aws.neon.tech"          # bootstrap
-export DB_NAME="endorsements"
+export DB_NAME="neondb"
 export DB_USER="<usuario>"
 export DB_PASSWORD="<password>"        # solo entorno, nunca commit
 export JWT_SECRET="$(openssl rand -hex 32)"
@@ -634,6 +649,23 @@ El `scope` **sí se aplica**: cada ruta exige el suyo (`/v1/endorse/translate` �
 `/v1/routes/optimal` → `routes:optimal`) y un token bien firmado con otro scope responde `403 FORBIDDEN`.
 El emisor de demo rechaza scopes ajenos con `400 VALIDATION_ERROR`, así que el token del jurado no escala
 privilegios ni alcanza endpoints administrativos (no hay ninguno expuesto). `ENABLE_DEMO_TOKEN=false` apaga el emisor.
+
+**Nota de portabilidad de los comandos.** Los ejemplos están escritos para **bash/zsh**: comillas simples
+para el cuerpo JSON y `\` al final de línea para continuar. En **PowerShell** o **CMD** eso no funciona
+(el `\` no continúa líneas y las comillas simples no protegen el JSON): usa comillas **dobles**, escapa
+las internas y escribe el comando en **una sola línea**. Equivalente al ejemplo del Reto 1:
+
+```powershell
+# Obtener el token (una línea)
+$TOKEN = (curl.exe -s -X POST "http://localhost:8082/v1/auth/token" -H "Content-Type: application/json" -d "{}" | ConvertFrom-Json).token
+
+# Traducir (una línea, comillas dobles y comillas internas escapadas con \")
+curl.exe -s -X POST "http://localhost:8082/v1/endorse/translate" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"policyNumber\":\"08200000049\",\"idEnvio\":5984,\"frecuencia\":\"Semestral\",\"tipoEndoso\":\"CambioFrecuencia\",\"producto\":\"Rumbo\",\"plan\":\"PlanRumbo\",\"moneda\":\"Nuevo Sol\",\"usuario\":\"interface.servicios\",\"fechaSolicitud\":\"2025-08-27\",\"fechaCliente\":\"2025-08-27\",\"fechaEfectiva\":\"2025-09-01\"}"
+```
+
+Si el escapado resulta incómodo, guarda el cuerpo en un fichero `payload.json` y usa `-d "@payload.json"`:
+esa forma es idéntica en bash y en PowerShell. En la demo desplegada, además, no hace falta ningún
+comando: basta con abrir la URL del frontend y pulsar *Traducir*.
 
 Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 [§4](#4-reto-2--ruta-óptima-de-grúa), y en los README de cada backend.
