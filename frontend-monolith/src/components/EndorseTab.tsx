@@ -133,37 +133,105 @@ function withSelection(raw: string, item: TemplateCatalogItem): string {
   return JSON.stringify(base, null, 2);
 }
 
-/** Origen del valor, con el nombre de columna que lo explica en BD. */
-function describeOrigin(field: TemplateFieldDefinition): string {
-  switch (field.source) {
+/** Los tres orígenes que define la BD, más el caso neutro de un valor inesperado. */
+type OriginKind = 'INPUT' | 'CONSTANT' | 'DEFAULT' | 'UNKNOWN';
+
+interface OriginInfo {
+  kind: OriginKind;
+  /** Tipo visible: INPUT / CONSTANT / DEFAULT; el literal crudo si no se reconoce. */
+  label: string;
+  /** Procedencia exacta, en texto secundario junto al chip. */
+  provenance: string;
+  /** Explicación de una línea; la misma que usa la leyenda. */
+  hint: string;
+  /** Sufijo de color del chip: input | constant | default | unknown. */
+  tone: string;
+}
+
+const ORIGIN_HINTS: Record<OriginKind, string> = {
+  INPUT: 'Lo envía el cliente en el JSON de entrada',
+  CONSTANT: 'Fijo en la plantilla; siempre el mismo valor',
+  DEFAULT: 'Se usa solo si el cliente no lo envía',
+  UNKNOWN: 'Origen no reconocido: se muestra tal cual, sin clasificarlo',
+};
+
+const ORIGIN_LEGEND: ReadonlyArray<{ kind: Exclude<OriginKind, 'UNKNOWN'>; label: string }> = [
+  { kind: 'INPUT', label: 'INPUT' },
+  { kind: 'CONSTANT', label: 'CONSTANT' },
+  { kind: 'DEFAULT', label: 'DEFAULT' },
+];
+
+/**
+ * Clasifica el origen de un campo sin fiarse de mayúsculas ni de valores futuros.
+ *
+ * Normaliza con trim + uppercase, así "input", "Input" e "INPUT" caen en el mismo
+ * grupo. Si el valor no es ninguno de los tres, devuelve UNKNOWN conservando el
+ * literal: un dato inesperado debe degradar con dignidad, nunca desaparecer ni
+ * sumarse a un conteo que no le corresponde.
+ */
+function classifyOrigin(field: TemplateFieldDefinition): OriginInfo {
+  const raw = typeof field.source === 'string' ? field.source : '';
+  const normalized = raw.trim().toUpperCase();
+
+  switch (normalized) {
+    case 'INPUT':
+      return {
+        kind: 'INPUT',
+        label: 'INPUT',
+        provenance: field.sourceKey ? `input.${field.sourceKey}` : 'input',
+        hint: ORIGIN_HINTS.INPUT,
+        tone: 'input',
+      };
     case 'CONSTANT':
-      return 'constante en BD';
+      return {
+        kind: 'CONSTANT',
+        label: 'CONSTANT',
+        provenance: 'constante en BD',
+        hint: ORIGIN_HINTS.CONSTANT,
+        tone: 'constant',
+      };
     case 'DEFAULT':
-      return 'valor por defecto';
-    default:
-      return field.sourceKey ? `input.${field.sourceKey}` : 'input';
+      return {
+        kind: 'DEFAULT',
+        label: 'DEFAULT',
+        provenance: 'valor por defecto',
+        hint: ORIGIN_HINTS.DEFAULT,
+        tone: 'default',
+      };
+    default: {
+      const literal = raw.trim();
+      return {
+        kind: 'UNKNOWN',
+        label: literal === '' ? 'N/D' : literal,
+        provenance: literal === '' ? 'sin origen en la plantilla' : 'origen crudo de la plantilla',
+        hint: ORIGIN_HINTS.UNKNOWN,
+        tone: 'unknown',
+      };
+    }
   }
 }
 
-/** Muestra un valor de plantilla distinguiendo el vacío intencional del nulo. */
-function formatValue(value: string | null): string {
-  if (value === null) {
-    return '—';
-  }
-  return value === '' ? '(vacío)' : value;
-}
-
-/** Texto a mostrar cuando todavía no hay traducción de la que leer el valor. */
+/**
+ * Texto a mostrar cuando todavía no hay traducción de la que leer el valor.
+ *
+ * Devuelve el valor crudo: la cadena vacía se decide en la celda, donde se pinta
+ * como "vacío intencional" en lugar de confundirse con un error.
+ */
 function configuredValue(field: TemplateFieldDefinition): string {
-  switch (field.source) {
+  switch (classifyOrigin(field).kind) {
     case 'CONSTANT':
-      return formatValue(field.constantValue);
+      return field.constantValue ?? '—';
     case 'DEFAULT':
-      return formatValue(field.defaultValue);
+      return field.defaultValue ?? '—';
+    case 'UNKNOWN':
+      return '—';
     default:
-      return field.defaultValue === null
-        ? `se toma del payload`
-        : `payload · default ${formatValue(field.defaultValue)}`;
+      if (field.defaultValue === null) {
+        return 'se toma del payload';
+      }
+      return field.defaultValue === ''
+        ? 'payload · default vacío'
+        : `payload · default ${field.defaultValue}`;
   }
 }
 
@@ -331,6 +399,34 @@ export function EndorseTab() {
     return [...template.events].sort((a, b) => a.orderEvent - b.orderEvent);
   }, [template]);
 
+  // Desglose calculado del array real de campos: nada de cifras escritas a mano.
+  const originCounts = useMemo<Record<OriginKind, number>>(() => {
+    const counts: Record<OriginKind, number> = {
+      INPUT: 0,
+      CONSTANT: 0,
+      DEFAULT: 0,
+      UNKNOWN: 0,
+    };
+
+    orderedFields.forEach((field) => {
+      counts[classifyOrigin(field).kind] += 1;
+    });
+
+    return counts;
+  }, [orderedFields]);
+
+  // ¿Cuántos valores viajan vacíos? La nota que lo explica se pinta una sola vez
+  // y sirve igual para uno o para varios campos vacíos.
+  const intentionalEmptyCount = useMemo<number>(
+    () =>
+      orderedFields.filter((field) => {
+        const resolved = resolvedValues?.get(field.label);
+        const effective = resolved === undefined ? configuredValue(field) : resolved;
+        return effective === '';
+      }).length,
+    [orderedFields, resolvedValues],
+  );
+
   const runTranslate = async (raw: string): Promise<void> => {
     setError(null);
     setResult(null);
@@ -473,12 +569,30 @@ export function EndorseTab() {
           <div>
             <h2>Plantilla Aplicada</h2>
             <p className="muted">
-              Lo que ves aquí no está escrito en el código: viene de las tablas{' '}
+              Esta salida no está escrita en el código: sale de las tablas{' '}
               <code>templates</code>, <code>template_fields</code> y <code>template_events</code>.
-              El selector se puebla con <code>GET /v1/templates</code>, así que agregar un
-              producto o tipo de endoso nuevo es un <strong>INSERT</strong>, no un cambio de
-              código.
+              Agregar un producto es un <strong>INSERT</strong>, no un cambio de código.
             </p>
+
+            {/* El detalle queda a un clic: <details> es nativo y se opera con teclado. */}
+            <details className="template-details">
+              <summary>¿Cómo funciona?</summary>
+              <ul>
+                <li>
+                  El selector se puebla con <code>GET /v1/templates</code>: si mañana se inserta
+                  una plantilla nueva en la BD, aparece aquí sin tocar el frontend.
+                </li>
+                <li>
+                  Cada fila indica de dónde sale su valor: del JSON de entrada, de una constante
+                  o de un valor por defecto declarados en la plantilla.
+                </li>
+                <li>
+                  El orden de campos y eventos lo fijan <code>order_index</code> y{' '}
+                  <code>order_event</code>; el mapper nunca depende del orden de las claves de un
+                  objeto JavaScript.
+                </li>
+              </ul>
+            </details>
           </div>
           {template && <span className="badge">v{template.version}</span>}
         </header>
@@ -512,7 +626,11 @@ export function EndorseTab() {
               aria-expanded={isDropdownOpen}
             >
               {catalog.length === 0 ? (
-                <span className="select-placeholder">Cargando plantillas…</span>
+                // Si el catálogo falló, el trigger lo dice: nunca un "cargando"
+                // eterno que parezca que la aplicación se colgó.
+                <span className="select-placeholder">
+                  {templateError ? 'Catálogo no disponible' : 'Cargando plantillas…'}
+                </span>
               ) : selected ? (
                 <div className="select-selected-content">
                   <span className={`select-product-pill pill-${selected.productName.toLowerCase()}`}>
@@ -593,6 +711,34 @@ export function EndorseTab() {
             )}
           </div>
 
+          {/* Atajos: alternan de plantilla sin abrir el desplegable. Salen del mismo
+              catálogo real, así que nunca ofrecen algo que no exista en la BD. */}
+          {catalog.length > 1 && (
+            <div
+              className="template-shortcuts"
+              role="group"
+              aria-label="Cambiar de plantilla rápidamente"
+            >
+              {catalog.map((item) => {
+                const isCurrent = Boolean(
+                  selected && templateKey(selected) === templateKey(item),
+                );
+                return (
+                  <button
+                    key={templateKey(item)}
+                    type="button"
+                    className={`shortcut-button ${isCurrent ? 'is-current' : ''}`}
+                    onClick={() => void handleSelectTemplate(item)}
+                    disabled={isBusy || isCurrent}
+                    aria-pressed={isCurrent}
+                  >
+                    {item.productName} · {item.endorsementTypeName}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {isTemplateLoading && <span className="badge">cargando…</span>}
         </div>
 
@@ -609,19 +755,56 @@ export function EndorseTab() {
               <span className="chip">{template.events.length} eventos</span>
             </div>
 
+            {/* Desglose calculado en vivo desde los campos: nunca una cifra a mano. */}
+            <div className="origin-breakdown" aria-live="polite">
+              <span className="origin-breakdown-label">Desglose por origen</span>
+              <span className="origin-breakdown-values">
+                <span>{orderedFields.length} campos</span>
+                {ORIGIN_LEGEND.map((entry) => (
+                  <span key={entry.kind} className="origin-breakdown-item">
+                    {originCounts[entry.kind]} {entry.label}
+                  </span>
+                ))}
+                {originCounts.UNKNOWN > 0 && (
+                  <span className="origin-breakdown-item">otros: {originCounts.UNKNOWN}</span>
+                )}
+              </span>
+            </div>
+
+            {/* Leyenda: el color de cada chip se explica una sola vez, arriba de la tabla. */}
+            <div className="origin-legend" aria-label="Origen de los valores de la plantilla">
+              {ORIGIN_LEGEND.map((entry) => (
+                <div key={entry.kind} className="origin-legend-item">
+                  <span className={`origin-tag origin-${entry.kind.toLowerCase()}`}>
+                    {entry.label}
+                  </span>
+                  <span className="origin-hint">{ORIGIN_HINTS[entry.kind]}</span>
+                </div>
+              ))}
+            </div>
+
             <div className="template-table-wrap">
               <table className="template-table" aria-label="Campos de la plantilla aplicada">
                 <thead>
                   <tr>
-                    <th scope="col">#</th>
+                    <th scope="col" title="Posición del campo: order_index en BD">
+                      #
+                    </th>
                     <th scope="col">Etiqueta</th>
                     <th scope="col">Origen</th>
-                    <th scope="col">Valor efectivo</th>
+                    <th
+                      scope="col"
+                      title="Valor final ya resuelto, tal como sale en el JSON de salida"
+                    >
+                      Valor efectivo
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {orderedFields.map((field) => {
                     const resolved = resolvedValues?.get(field.label);
+                    const origin = classifyOrigin(field);
+                    const effective = resolved === undefined ? configuredValue(field) : resolved;
                     return (
                       <tr key={`${field.order}-${field.label}`}>
                         <td className="template-order">{field.order}</td>
@@ -629,12 +812,27 @@ export function EndorseTab() {
                           <code>{field.label}</code>
                         </td>
                         <td>
-                          <span className={`origin-tag origin-${field.source.toLowerCase()}`}>
-                            {describeOrigin(field)}
-                          </span>
+                          <div className="origin-cell">
+                            <span
+                              className={`origin-tag origin-${origin.tone}`}
+                              title={`${origin.hint} · ${origin.provenance}`}
+                            >
+                              {origin.label}
+                            </span>
+                            <span className="origin-provenance">{origin.provenance}</span>
+                          </div>
                         </td>
                         <td className="template-value">
-                          {resolved === undefined ? configuredValue(field) : formatValue(resolved)}
+                          {effective === '' ? (
+                            <span
+                              className="value-empty"
+                              title="Este campo viaja vacío a propósito: el core lo exige así."
+                            >
+                              ∅ vacío intencional
+                            </span>
+                          ) : (
+                            effective
+                          )}
                         </td>
                       </tr>
                     );
@@ -642,6 +840,15 @@ export function EndorseTab() {
                 </tbody>
               </table>
             </div>
+
+            {/* Una sola nota genérica: sirve igual con un campo vacío que con varios. */}
+            {intentionalEmptyCount > 0 && (
+              <p className="template-note">
+                <span className="value-empty">∅ vacío intencional</span> — este campo viaja vacío
+                a propósito: el core lo exige así.
+                {intentionalEmptyCount > 1 ? ` (${intentionalEmptyCount} campos así)` : ''}
+              </p>
+            )}
 
             <div className="template-events">
               <h3>Eventos aplicados</h3>
@@ -653,11 +860,6 @@ export function EndorseTab() {
                   </li>
                 ))}
               </ul>
-              <p className="muted">
-                El orden de los campos y de los eventos lo fijan <code>order_index</code> y{' '}
-                <code>order_event</code>; el mapper nunca depende del orden de las claves de un
-                objeto JavaScript.
-              </p>
             </div>
           </>
         ) : (

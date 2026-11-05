@@ -1111,6 +1111,167 @@ p {
   color: #166534;
 }
 
+/* Origen no reconocido: gris neutro, ni verde ni rojo. No debe parecer un error. */
+.origin-unknown {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+/* Tipo + procedencia exacta en la misma celda, sin tocar la etiqueta técnica. */
+.origin-cell {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.origin-provenance {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+/* Leyenda del origen: explica el color una sola vez, arriba de la tabla. */
+.origin-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.origin-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.origin-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* Desglose vivo: se envuelve solo, nunca empuja el ancho del panel. */
+.origin-breakdown {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.origin-breakdown-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #475569;
+}
+
+.origin-breakdown-values {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--mono);
+}
+
+/* Separador decorativo: el dato va en el texto, el punto medio solo lo agrupa. */
+.origin-breakdown-item::before {
+  content: '·';
+  margin-right: 6px;
+  color: #cbd5e1;
+}
+
+/* Valor vacío intencional: tenue, jamás con pinta de error. */
+.value-empty {
+  font-style: italic;
+  color: #94a3b8;
+}
+
+.template-note {
+  margin: 10px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* Atajos para alternar de plantilla sin abrir el desplegable. */
+.template-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 3px;
+}
+
+.shortcut-button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.shortcut-button:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.shortcut-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.shortcut-button.is-current {
+  background: var(--surface-muted);
+  border-color: #cbd5e1;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.shortcut-button:disabled:not(.is-current) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Detalle plegable de la intro: <details> nativo, operable por teclado. */
+.template-details {
+  margin-top: 6px;
+  font-size: 0.82rem;
+}
+
+.template-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--primary);
+  list-style-position: inside;
+}
+
+.template-details summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.template-details ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--text-muted);
+}
+
 .template-events {
   margin-top: 18px;
 }
@@ -1138,11 +1299,6 @@ p {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface-muted);
-}
-
-.template-events p {
-  margin: 0;
-  font-size: 0.82rem;
 }
 
 .endorse-er-figure {
@@ -1192,12 +1348,54 @@ p {
     align-items: stretch;
   }
 
+  .template-shortcuts {
+    padding-bottom: 0;
+  }
+
   .template-table {
     font-size: 0.8rem;
   }
 
+  .origin-legend {
+    gap: 8px 14px;
+  }
+
   .endorse-er-image {
     max-height: 320px;
+  }
+}
+
+@media (max-width: 640px) {
+  .template-table thead th,
+  .template-table tbody td {
+    padding: 7px 8px;
+  }
+
+  /* En móvil el encabezado puede partirse: evita el scroll interno de la tabla. */
+  .template-table thead th {
+    white-space: normal;
+  }
+
+  .template-table {
+    font-size: 0.76rem;
+  }
+
+  .template-order {
+    width: 30px;
+  }
+
+  /* La procedencia sigue disponible en el title del chip; el tipo nunca se oculta. */
+  .origin-provenance {
+    display: none;
+  }
+
+  .template-table tbody code {
+    word-break: break-word;
+  }
+
+  .origin-legend {
+    flex-direction: column;
+    gap: 6px;
   }
 }
 
