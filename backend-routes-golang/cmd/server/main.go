@@ -27,7 +27,7 @@ func main() {
 	if secret == "" {
 		log.Fatal("JWT_SECRET es obligatorio (mínimo 16 caracteres); defínelo en el entorno o inyéctalo desde Secret Manager")
 	}
-	ttlMinutes := getEnvInt("JWT_TTL_MINUTES", 15)
+	ttlMinutes := getEnvInt("JWT_TTL_MINUTES", 60)
 	enableDemoToken := getEnv("ENABLE_DEMO_TOKEN", "true") == "true"
 	// Lista explícita de orígenes (coma separada). CORS_ORIGIN se acepta como
 	// alias de una sola entrada. Sin valor, no se emite CORS (seguro por
