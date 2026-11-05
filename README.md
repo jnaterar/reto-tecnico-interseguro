@@ -1,9 +1,28 @@
 # Reto Técnico — Interseguro (Technical Lead / Software Architect)
 
-Monorepo con los cuatro entregables: **traductor de endosos data-driven** (Node + Hapi + Postgres), **ruta óptima de grúa** (Go + Dijkstra), **frontend unificado** en dos pestañas y el **análisis de arquitectura** del flujo de préstamos.
+Monorepo con los cuatro entregables: **traductor de endosos data-driven** (Node + Hapi + Postgres), **ruta óptima de grúa** (Go + Dijkstra), **análisis de arquitectura** del flujo de préstamos y **frontend unificado** en dos pestañas.
 Los tres artefactos ejecutables levantan con `docker compose up --build`; el cuarto es un documento técnico con diagramas editables.
 Todas las cifras de verificación de este README provienen de comandos ejecutados sobre este repositorio y del smoke
-ejecutado contra el despliegue activo (§0.1), no de estimaciones.
+ejecutado contra el despliegue activo ([§0.1](#01-estado-del-despliegue-activo)), no de estimaciones.
+
+## Contenido
+
+- [Resumen ejecutivo](#resumen-ejecutivo)
+- [0. Panorama de la entrega](#0-panorama-de-la-entrega)
+  - [0.1 Estado del despliegue](#01-estado-del-despliegue-activo)
+  - [0.2 Priorización declarada](#02-priorización-declarada)
+- [1. Arranque en un comando](#1-arranque-en-un-comando)
+- [2. Ejecución local (sin Docker)](#2-ejecución-local-sin-docker)
+- [3. Reto 1 — Traductor de endosos](#3-reto-1--traductor-de-endosos)
+- [4. Reto 2 — Ruta óptima de grúa](#4-reto-2--ruta-óptima-de-grúa)
+- [5. Reto 3 — Préstamos](#5-reto-3--préstamos-el-dinero-se-duplica-al-hacer-clic-dos-veces)
+- [6. Frontend unificado](#6-frontend-unificado)
+- [7. Decisiones y trade-offs](#7-decisiones-y-trade-offs)
+- [8. Despliegue en GCP](#8-despliegue-en-gcp-cloud-run--neon--script-definitivo)
+- [9. Credenciales y ejemplos cURL](#9-credenciales-y-ejemplos-curl-demo)
+- [10. Supuestos y pendientes](#10-supuestos-y-pendientes)
+- [11. Estructura del repositorio](#11-estructura-del-repositorio)
+- [12. Verificación ejecutada](#12-verificación-ejecutada)
 
 ## Resumen ejecutivo
 
@@ -54,7 +73,9 @@ curl -s -X POST localhost:8081/v1/routes/optimal \
 
 ---
 
-## 0.1 Estado del despliegue: ACTIVO
+## 0. Panorama de la entrega
+
+### 0.1 Estado del despliegue: ACTIVO
 
 Los tres servicios están desplegados y verificados end-to-end en Cloud Run (`us-central1`):
 
@@ -83,9 +104,7 @@ Los tres servicios están desplegados y verificados end-to-end en Cloud Run (`us
   control negativo: un `Origin` hostil (`https://evil.example.com`) **no** recibe esa cabecera.
 - **Frontend —** los indicadores de salud de ambos backends están operativos.
 
----
-
-## 0. PRIORIZACIÓN DECLARADA
+### 0.2 Priorización declarada
 
 El orden no fue casual: primero lo que **se puede romper en silencio**, después lo que se ve.
 
@@ -145,10 +164,11 @@ El orden de arranque lo garantizan healthchecks reales, no `sleep`:
 - **Requisito único:** Docker Desktop. No hace falta instalar Node, Go ni PostgreSQL en el host: todo
   corre en contenedores.
 - **Comando:** `docker compose up --build` — el mismo, carácter por carácter, en los tres sistemas.
-- `deploy-gcp.sh` y `deploy.env.sh` son **herramientas del autor** para desplegar a GCP; el evaluador
-  **no las necesita** para probar el proyecto (la vía principal es la demo ya desplegada). Solo piden
-  bash —Git Bash o WSL si alguien quiere desplegar desde Windows—, y el `.gitattributes` del repositorio
-  fuerza LF en los `.sh` para que no lleguen con CRLF al clonar.
+- `deploy-gcp.sh` es la **herramienta de despliegue** a GCP; el evaluador **no la necesita** para probar
+  el proyecto (la vía principal es la demo ya desplegada). Solo pide bash —Git Bash o WSL si alguien
+  quiere desplegar desde Windows—, y el `.gitattributes` del repositorio fuerza LF en los `.sh` para que
+  no lleguen con CRLF al clonar. `deploy.env.sh` es el archivo **local** del operador con las variables
+  del entorno: no está versionado ni forma parte del repositorio.
 - **cURL:** los ejemplos de este documento están en sintaxis bash/zsh; en PowerShell/CMD hay que
   adaptarlos (ver la nota en [§9](#9-credenciales-y-ejemplos-curl-demo)).
 
@@ -352,6 +372,16 @@ contrato HTTP (`TestOptimalRouteRequiresJWT`, `TestOptimalRouteUnreachable`) y s
 `TestCORSDoesNotEchoUnknownOriginOnSimpleRequest`, `TestDemoTokenRejectsArbitraryScope`,
 `TestDemoTokenDefaultsToLimitedScope`, `TestOptimalRouteRejectsTokenWithWrongScope`).
 Detalle: [`backend-routes-golang/README.md`](backend-routes-golang/README.md).
+
+### Errores del Reto 2
+
+| Código | HTTP | Cuándo |
+|---|---|---|
+| `VALIDATION_ERROR` | 400 | Payload inválido o tipo incorrecto |
+| `NEGATIVE_WEIGHT` | 400 | Arista con peso negativo |
+| `UNAUTHORIZED` | 401 | JWT ausente, manipulado o expirado |
+| `NODE_NOT_FOUND` | 422 | Accidente o base inexistente en el grafo |
+| `UNREACHABLE` | 422 | **Ninguna** base alcanza el accidente |
 
 ---
 
@@ -713,7 +743,7 @@ curl -i -X OPTIONS "$URL_ENDORSEMENTS/v1/endorse/translate" \
    > imagen construida sin las URLs absolutas sirve la SPA pero devuelve `502` en cada llamada.
    > Verificación rápida tras el primer deploy: pulsar *Traducir* y comprobar en la pestaña *Network*
    > que la petición sale hacia `https://<backend>.onrender.com`, no hacia `/endorse-api`.
-6. Ajustar `CORS_ORIGINS` / `CORS_ORIGIN` al dominio del frontend y repetir 8.8.
+6. Ajustar `CORS_ORIGINS` / `CORS_ORIGIN` al dominio del frontend y repetir la verificación de §8.5.
 
 **Token en cloud**: el cuerpo correcto es `{}` o `{"subject":"demo-client","scope":"endorse:translate"}`
 (no hay usuario/contraseña). Ejemplo:
@@ -765,17 +795,8 @@ esa forma es idéntica en bash y en PowerShell. En la demo desplegada, además, 
 comando: basta con abrir la URL del frontend y pulsar *Traducir*.
 
 Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
-[§4](#4-reto-2--ruta-óptima-de-grúa), y en los README de cada backend.
-
-### Tabla de errores del Reto 2
-
-| Código | HTTP | Cuándo |
-|---|---|---|
-| `VALIDATION_ERROR` | 400 | Payload inválido o tipo incorrecto |
-| `NEGATIVE_WEIGHT` | 400 | Arista con peso negativo |
-| `UNAUTHORIZED` | 401 | JWT ausente, manipulado o expirado |
-| `NODE_NOT_FOUND` | 422 | Accidente o base inexistente en el grafo |
-| `UNREACHABLE` | 422 | **Ninguna** base alcanza el accidente |
+[§4](#4-reto-2--ruta-óptima-de-grúa), y en los README de cada backend. La tabla de errores del Reto 2
+está en [§4](#errores-del-reto-2).
 
 ---
 
