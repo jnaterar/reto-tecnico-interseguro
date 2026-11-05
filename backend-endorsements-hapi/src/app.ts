@@ -14,6 +14,8 @@ export interface ServerDependencies {
   jwtTtlSeconds: number;
   enableDemoToken: boolean;
   corsOrigins: string[];
+  /** Se usa solo para rechazar `CORS_ORIGINS='*'` en producción. */
+  nodeEnv?: string;
   host?: string;
   port?: number;
 }
@@ -24,14 +26,28 @@ export interface ServerDependencies {
  * repositorio en memoria sin levantar PostgreSQL.
  */
 export async function buildServer(deps: ServerDependencies): Promise<Server> {
+  const nodeEnv = deps.nodeEnv ?? 'development';
+  if (nodeEnv === 'production' && deps.corsOrigins.includes('*')) {
+    throw new Error(
+      'CORS_ORIGINS no puede ser "*" en producción: define la URL exacta del frontend ' +
+        '(./deploy-gcp.sh update-cors la fija después de desplegar el frontend).',
+    );
+  }
+
   const server = createHapiServer({
     host: deps.host ?? '0.0.0.0',
     port: deps.port ?? 8082,
     routes: {
       cors: {
-        origin: deps.corsOrigins,
-        additionalHeaders: ['authorization', 'content-type'],
-        exposedHeaders: ['x-api-version'],
+        // Lista explícita de orígenes; `'ignore'` (lista vacía) = sin CORS.
+        // Hapi refleja el Origin recibido solo si está en la lista, por lo que
+        // un origen hostil no recibe Access-Control-Allow-Origin.
+        origin: deps.corsOrigins.length > 0 ? deps.corsOrigins : 'ignore',
+        additionalHeaders: ['authorization', 'content-type', 'x-api-version'],
+        additionalExposedHeaders: ['x-api-version'],
+        maxAge: 600,
+        preflightStatusCode: 204,
+        credentials: false,
       },
     },
   });

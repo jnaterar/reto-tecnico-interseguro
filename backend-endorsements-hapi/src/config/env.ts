@@ -21,6 +21,11 @@ export interface AppConfig {
 
 const MIN_SECRET_LENGTH = 16;
 
+// Orígenes que usa el navegador en local: nginx del compose (:8080) y el
+// servidor de desarrollo de Vite (:5173). Solo aplican cuando NODE_ENV no es
+// production; en producción CORS_ORIGINS es obligatoria.
+const DEFAULT_DEV_CORS_ORIGINS = ['http://localhost:8080', 'http://localhost:5173'];
+
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) {
     return fallback;
@@ -31,6 +36,25 @@ function parseBoolean(value: string | undefined, fallback: boolean): boolean {
 function parseNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Convierte `CORS_ORIGINS` (lista separada por comas) en un array normalizado.
+ *
+ * - `*` solo se conserva tal cual: `buildServer` lo rechaza en producción.
+ * - En desarrollo, si no se define, se aceptan los orígenes locales conocidos.
+ * - En producción, si no se define, la lista queda vacía (sin CORS) hasta que
+ *   `update-cors` fije la URL real del frontend. Nunca se asume `*`.
+ */
+function parseOrigins(value: string | undefined, nodeEnv: string): string[] {
+  const raw = value?.trim();
+  if (!raw) {
+    return nodeEnv === 'production' ? [] : [...DEFAULT_DEV_CORS_ORIGINS];
+  }
+  return raw
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter((origin) => origin.length > 0);
 }
 
 /**
@@ -80,8 +104,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error(`JWT_SECRET debe tener al menos ${MIN_SECRET_LENGTH} caracteres`);
   }
 
-  const cors = env.CORS_ORIGINS?.trim();
-
   return {
     nodeEnv,
     host: env.HOST?.trim() || '0.0.0.0',
@@ -99,9 +121,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // Postgres gestionado (Cloud SQL por IP pública, Render) exige TLS.
     dbSsl: parseBoolean(env.DB_SSL, false),
     jwtSecret,
-    jwtTtlSeconds: parseNumber(env.JWT_TTL_SECONDS, 3600),
+    // En local el token puede durar más para no interrumpir la demo; en el
+    // despliegue se reduce a 15 minutos (ver deploy-gcp.sh).
+    jwtTtlSeconds: parseNumber(env.JWT_TTL_SECONDS, nodeEnv === 'production' ? 900 : 3600),
     // En producción el emisor de tokens de demo queda apagado salvo opt-in.
     enableDemoToken: parseBoolean(env.ENABLE_DEMO_TOKEN, nodeEnv !== 'production'),
-    corsOrigins: !cors || cors === '*' ? ['*'] : cors.split(',').map((origin) => origin.trim()),
+    corsOrigins: parseOrigins(env.CORS_ORIGINS, nodeEnv),
   };
 }

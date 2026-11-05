@@ -18,7 +18,8 @@ beforeAll(async () => {
     jwtSecret: JWT_SECRET,
     jwtTtlSeconds: 3600,
     enableDemoToken: true,
-    corsOrigins: ['*'],
+    corsOrigins: ['http://localhost:8080'],
+    nodeEnv: 'test',
     host: '127.0.0.1',
     port: 0,
   });
@@ -142,5 +143,66 @@ describe('HTTP /v1/endorse/translate', () => {
     });
 
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('CORS', () => {
+  it('responde el preflight al origen permitido con el origen exacto (no *)', async () => {
+    const response = await server.inject({
+      method: 'OPTIONS',
+      url: '/v1/endorse/translate',
+      headers: {
+        origin: 'http://localhost:8080',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type,x-api-version',
+      },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:8080');
+    expect(String(response.headers['access-control-allow-headers']).toLowerCase()).toContain(
+      'authorization',
+    );
+    expect(String(response.headers['access-control-allow-methods'])).toContain('POST');
+    expect(String(response.headers['access-control-expose-headers'])).toContain('x-api-version');
+  });
+
+  it('no emite Access-Control-Allow-Origin para un origen hostil', async () => {
+    const response = await server.inject({
+      method: 'OPTIONS',
+      url: '/v1/endorse/translate',
+      headers: {
+        origin: 'http://evil.example.com',
+        'access-control-request-method': 'POST',
+      },
+    });
+
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
+
+describe('token de demo', () => {
+  it('trae el scope del reto y una vida acotada', async () => {
+    const response = await server.inject({ method: 'POST', url: '/v1/auth/token', payload: {} });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.result as { token: string; expiresIn: number };
+    const claims = JSON.parse(
+      Buffer.from(body.token.split('.')[1] as string, 'base64url').toString('utf8'),
+    ) as { scope: string; exp: number };
+
+    expect(claims.scope).toBe('endorse:translate');
+    expect(body.expiresIn).toBeLessThanOrEqual(3600);
+  });
+
+  it('rechaza un scope arbitrario (no escala privilegios)', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/v1/auth/token',
+      payload: { scope: 'admin:all' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect((response.result as { error: { code: string } }).error.code).toBe('VALIDATION_ERROR');
   });
 });

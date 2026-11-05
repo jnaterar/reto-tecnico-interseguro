@@ -17,6 +17,7 @@ async function main(): Promise<void> {
     jwtTtlSeconds: config.jwtTtlSeconds,
     enableDemoToken: config.enableDemoToken,
     corsOrigins: config.corsOrigins,
+    nodeEnv: config.nodeEnv,
     host: config.host,
     port: config.port,
   });

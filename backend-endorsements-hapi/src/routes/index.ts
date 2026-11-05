@@ -103,7 +103,9 @@ export function buildRoutes(deps: RoutesDependencies): ServerRoute[] {
       method: 'POST',
       path: '/v1/endorse/translate',
       options: {
-        auth: 'jwt',
+        // El token debe traer el scope del reto: un token con otro scope no
+        // sirve para este endpoint (defensa en profundidad sobre el demo token).
+        auth: { strategy: 'jwt', scope: ['endorse:translate'] },
         tags: ['api', 'endorse'],
         validate: {
           payload: endorseTranslatePayload,
