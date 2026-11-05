@@ -1,11 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { AppError } from '../src/errors/app-error';
 import { mapToCorePayload } from '../src/mappers/endorse.mapper';
+import type { TemplateFieldSource } from '../src/entities/template.entity';
 import {
   exampleRequest,
   expectedPayload,
   rumboTemplate,
 } from './fixtures';
+
+/**
+ * Afirma que el mapper lanza un AppError con el CÓDIGO exacto esperado.
+ * Importa el código, no solo "que lanza": los dos bordes de source_key comparten
+ * tipo de error pero antes se reportaban con el código equivocado (400 en vez
+ * de 500) o no se reportaban en absoluto.
+ */
+function expectErrorCode(fn: () => unknown, code: string): void {
+  try {
+    fn();
+  } catch (error) {
+    expect(error).toBeInstanceOf(AppError);
+    expect((error as AppError).code).toBe(code);
+    return;
+  }
+
+  throw new Error(`se esperaba un AppError con código ${code}, pero no se lanzó nada`);
+}
 
 describe('mapToCorePayload', () => {
   it('traduce exactamente el ejemplo del enunciado', () => {
@@ -122,5 +141,114 @@ describe('mapToCorePayload', () => {
     } catch (error) {
       expect((error as AppError).code).toBe('TEMPLATE_CONFIG_INVALID');
     }
+  });
+
+  // --- Configuración inválida: ramas que existían en el código y no tenían test ---
+
+  it('falla con TEMPLATE_CONFIG_INVALID si un DEFAULT no define default_value', () => {
+    const invalidTemplate = {
+      ...rumboTemplate,
+      fields: rumboTemplate.fields.map((field) =>
+        field.label === 'InicioVigenciaEndoso' ? { ...field, defaultValue: null } : field,
+      ),
+    };
+
+    expectErrorCode(
+      () => mapToCorePayload(exampleRequest, invalidTemplate),
+      'TEMPLATE_CONFIG_INVALID',
+    );
+  });
+
+  it('falla con TEMPLATE_CONFIG_INVALID si un INPUT no define source_key', () => {
+    // `sourceKey: null` se normaliza a '' y lo atrapa el guard de vacío, pero el
+    // guard de contrato (`''` tampoco es clave del request) lo atraparía igual.
+    // Este test afirma el COMPORTAMIENTO observable (TEMPLATE_CONFIG_INVALID),
+    // no cuál de las dos capas responde: ambas dan el mismo resultado por diseño.
+    const invalidTemplate = {
+      ...rumboTemplate,
+      fields: rumboTemplate.fields.map((field) =>
+        field.label === 'NombreUsuario' ? { ...field, sourceKey: null } : field,
+      ),
+    };
+
+    expectErrorCode(
+      () => mapToCorePayload(exampleRequest, invalidTemplate),
+      'TEMPLATE_CONFIG_INVALID',
+    );
+  });
+
+  it('falla con TEMPLATE_CONFIG_INVALID si la plantilla no define eventos', () => {
+    // `events: []` es atrapado por assertValidTemplate Y por el guard del evento
+    // principal (`orderedEvents[0]`). Este test afirma el COMPORTAMIENTO
+    // observable (TEMPLATE_CONFIG_INVALID), no cuál de las dos defensas lo emite.
+    expectErrorCode(
+      () => mapToCorePayload(exampleRequest, { ...rumboTemplate, events: [] }),
+      'TEMPLATE_CONFIG_INVALID',
+    );
+  });
+
+  it('falla con TEMPLATE_CONFIG_INVALID si hay un orderEvent duplicado', () => {
+    const invalidTemplate = {
+      ...rumboTemplate,
+      events: rumboTemplate.events.map((event) =>
+        event.description === 'AprobarEndoso' ? { ...event, orderEvent: 1 } : event,
+      ),
+    };
+
+    expectErrorCode(
+      () => mapToCorePayload(exampleRequest, invalidTemplate),
+      'TEMPLATE_CONFIG_INVALID',
+    );
+  });
+
+  it('falla con TEMPLATE_CONFIG_INVALID si el source del campo no está soportado', () => {
+    const invalidTemplate = {
+      ...rumboTemplate,
+      fields: rumboTemplate.fields.map((field) =>
+        field.label === 'ProductosVida'
+          ? { ...field, source: 'INVENTADO' as TemplateFieldSource }
+          : field,
+      ),
+    };
+
+    expectErrorCode(
+      () => mapToCorePayload(exampleRequest, invalidTemplate),
+      'TEMPLATE_CONFIG_INVALID',
+    );
+  });
+
+  // --- Bordes nuevos: source_key defectuoso es error de PLANTILLA, no de request ---
+
+  it('falla con TEMPLATE_CONFIG_INVALID si source_key está vacío o solo espacios', () => {
+    for (const badKey of ['', '   ']) {
+      const invalidTemplate = {
+        ...rumboTemplate,
+        fields: rumboTemplate.fields.map((field) =>
+          field.label === 'NombreUsuario' ? { ...field, sourceKey: badKey } : field,
+        ),
+      };
+
+      expectErrorCode(
+        () => mapToCorePayload(exampleRequest, invalidTemplate),
+        'TEMPLATE_CONFIG_INVALID',
+      );
+    }
+  });
+
+  it('falla con TEMPLATE_CONFIG_INVALID si source_key no existe en el contrato, aunque haya default', () => {
+    const invalidTemplate = {
+      ...rumboTemplate,
+      fields: rumboTemplate.fields.map((field) =>
+        field.label === 'NombreUsuario'
+          ? { ...field, sourceKey: 'usuarioTipeado', defaultValue: 'anonimo' }
+          : field,
+      ),
+    };
+
+    // Antes: devolvía 'anonimo' en silencio y el payload salía incorrecto sin error.
+    expectErrorCode(
+      () => mapToCorePayload(exampleRequest, invalidTemplate),
+      'TEMPLATE_CONFIG_INVALID',
+    );
   });
 });

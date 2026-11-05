@@ -1,4 +1,8 @@
-import type { CoreEndorsePayload, EndorseTranslateRequest } from '../entities/endorse.entity';
+import {
+  isEndorseRequestKey,
+  type CoreEndorsePayload,
+  type EndorseTranslateRequest,
+} from '../entities/endorse.entity';
 import type {
   EndorsementTemplate,
   TemplateFieldDefinition,
@@ -96,24 +100,40 @@ function resolveFieldValue(
       return field.defaultValue;
     }
     case 'INPUT': {
-      if (field.sourceKey === null) {
+      // La plantilla es CONFIGURACIÓN, no petición: un source_key vacío o que no
+      // existe en el contrato del request es un error de configuración
+      // (TEMPLATE_CONFIG_INVALID -> 500), nunca un MISSING_FIELD_VALUE (400).
+      // Antes, un source_key con typo + default_value devolvía el default en
+      // silencio y el cliente recibía un JSON incorrecto sin ningún error.
+      const sourceKey = (field.sourceKey ?? '').trim();
+
+      if (sourceKey === '') {
         throw templateConfigInvalid(
           `El campo "${field.label}" es INPUT pero la plantilla no define source_key`,
           { label: field.label },
         );
       }
 
-      const rawValue = (request as unknown as Record<string, unknown>)[field.sourceKey];
+      if (!isEndorseRequestKey(sourceKey)) {
+        throw templateConfigInvalid(
+          `El campo "${field.label}" apunta a source_key "${sourceKey}", que no existe en el contrato del request`,
+          { label: field.label, sourceKey },
+        );
+      }
+
+      const rawValue = request[sourceKey];
       if (rawValue !== undefined && rawValue !== null && String(rawValue).trim() !== '') {
         return String(rawValue);
       }
 
-      // Se distingue "sin default" (null -> error) de "default vacío" ("" -> válido).
+      // source_key válido pero valor vacío en el request: ahora sí es un
+      // problema de la petición. Se distingue "sin default" (null -> error) de
+      // "default vacío" ("" -> válido).
       if (field.defaultValue !== null) {
         return field.defaultValue;
       }
 
-      throw missingFieldValue(field.label, field.sourceKey);
+      throw missingFieldValue(field.label, sourceKey);
     }
     default: {
       throw templateConfigInvalid(`Origen de campo no soportado: ${String(field.source)}`, {

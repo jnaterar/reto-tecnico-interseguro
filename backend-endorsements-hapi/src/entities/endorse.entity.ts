@@ -15,6 +15,34 @@ export interface EndorseTranslateRequest {
   fechaEfectiva: string;
 }
 
+/**
+ * Registro de claves del contrato de entrada: ÚNICA fuente de verdad para
+ * validar que un `source_key` de la plantilla (que es dato, vive en BD) apunta
+ * a un campo que realmente existe en el request.
+ *
+ * Tiparlo como `Record<keyof EndorseTranslateRequest, true>` obliga a que
+ * agregar o renombrar un campo del contrato rompa la compilación AQUÍ, en lugar
+ * de degradarse en un error silencioso en runtime.
+ */
+const ENDORSE_REQUEST_KEY_REGISTRY: Record<keyof EndorseTranslateRequest, true> = {
+  policyNumber: true,
+  idEnvio: true,
+  frecuencia: true,
+  tipoEndoso: true,
+  producto: true,
+  plan: true,
+  moneda: true,
+  usuario: true,
+  fechaSolicitud: true,
+  fechaCliente: true,
+  fechaEfectiva: true,
+};
+
+/** ¿La clave pertenece al contrato de entrada? (type guard, sin strings sueltos). */
+export function isEndorseRequestKey(key: string): key is keyof EndorseTranslateRequest {
+  return Object.prototype.hasOwnProperty.call(ENDORSE_REQUEST_KEY_REGISTRY, key);
+}
+
 export interface DynamicDataEntry {
   etiqueta: string;
   value: string;
