@@ -2,7 +2,8 @@
 
 Monorepo con los cuatro entregables: **traductor de endosos data-driven** (Node + Hapi + Postgres), **ruta óptima de grúa** (Go + Dijkstra), **frontend unificado** en dos pestañas y el **análisis de arquitectura** del flujo de préstamos.
 Los tres artefactos ejecutables levantan con `docker compose up --build`; el cuarto es un documento técnico con diagramas editables.
-Todas las cifras de verificación de este README provienen de comandos ejecutados sobre este repositorio, no de estimaciones.
+Todas las cifras de verificación de este README provienen de comandos ejecutados sobre este repositorio y del smoke
+ejecutado contra el despliegue activo (§0.1), no de estimaciones.
 
 ## Resumen ejecutivo
 
@@ -19,7 +20,7 @@ duplica el dinero al reintentar; (4) todo ello con un frontend que permita verif
 | 2 | Rutas óptimas de grúa (Dijkstra, grafo **no dirigido**) | [`backend-routes-golang/`](backend-routes-golang) | `go build`, `go vet`, `go test` verdes (20 tests, 40 casos) |
 | 3 | Arquitectura de préstamos: idempotencia, saga, reconciliación | [`architecture-drawio/architecture.md`](architecture-drawio/architecture.md) | Documento + diagramas `.drawio` + Mermaid |
 | 4 | Frontend unificado (dos pestañas, TS estricto) | [`frontend-monolith/`](frontend-monolith) | `tsc --noEmit && vite build` verde |
-| — | Despliegue reproducible en Cloud Run + Neon (**no ejecutado**) | [`deploy-gcp.sh`](deploy-gcp.sh) | `bash -n`, `shellcheck`, `docker compose config -q` |
+| — | Despliegue reproducible en Cloud Run + Neon (**ACTIVO**) | [`deploy-gcp.sh`](deploy-gcp.sh) | 3 servicios en `us-central1` + smoke E2E verificado (ver [§0.1](#01-estado-del-despliegue-activo)) |
 
 **Probarlo en 5 minutos** (requiere Docker; no necesita cuenta de nube ni base de datos externa):
 
@@ -53,6 +54,33 @@ curl -s -X POST localhost:8081/v1/routes/optimal \
 
 ---
 
+## 0.1 Estado del despliegue: ACTIVO
+
+Los tres servicios están desplegados y verificados end-to-end en Cloud Run (`us-central1`):
+
+| Servicio | URL larga canónica | Estado |
+|---|---|---|
+| `frontend` | https://frontend-919990628042.us-central1.run.app | ACTIVO |
+| `endorsements` (Reto 1) | https://endorsements-919990628042.us-central1.run.app | ACTIVO |
+| `routes` (Reto 2) | https://routes-919990628042.us-central1.run.app | ACTIVO |
+
+> Son las URLs **largas canónicas** (`https://<servicio>-<PROJECT_NUMBER>.<REGION>.run.app`), que son las
+> que el navegador abre y envía como `Origin`. No usar la variante corta que devuelve `status.url`
+> (`…-<hash>-<region>.a.run.app`): fijarla deja el frontend con los indicadores en rojo porque el
+> preflight CORS no coincide (detalle en [§6](#6-frontend-unificado) y [§8.6](#86-seguridad-cors-token-demo-y-alcance-de-iam)).
+
+**Smoke verificado contra el despliegue activo:**
+
+- **Reto 1 —** `POST /v1/endorse/translate` → `200`; `eventEntity.description = "SolicitarEndoso"` con
+  **12** entradas en `dynamicData`, preservando `'Default'` y `''` como valores distintos.
+- **Reto 2 —** `POST /v1/routes/optimal` → `200`; respuesta `{fromDepot, to, path, distance: 7}`
+  calculada sobre el grafo **no dirigido** (accidente `San Isidro`, base `Miraflores`).
+- **CORS —** control positivo: el `Origin` del frontend recibe `Access-Control-Allow-Origin`;
+  control negativo: un `Origin` hostil (`https://evil.example.com`) **no** recibe esa cabecera.
+- **Frontend —** los indicadores de salud de ambos backends están operativos.
+
+---
+
 ## 0. PRIORIZACIÓN DECLARADA
 
 El orden no fue casual: primero lo que **se puede romper en silencio**, después lo que se ve.
@@ -63,12 +91,13 @@ El orden no fue casual: primero lo que **se puede romper en silencio**, después
 | 2 | **Correctitud del Reto 2** (grafo no dirigido, empates, bases aisladas, nodo inexistente, pesos negativos) | Cinco de las seis trampas producen **resultados incorrectos sin error**: el peor tipo de bug | Completo + tabla de tests |
 | 3 | **Frontend que demuestra los dos backends** (textarea → traducir; selector + checklist → calcular) | Sin esto los retos no son verificables por un tercero en 60 segundos | Completo + `build` verde |
 | 4 | **Profundidad del Reto 3** (contrato de idempotencia, saga, máquina de estados, costo) | Es un problema de arquitectura, no de código: la decisión se defiende con el documento | Completo |
-| 5 | **Infra y narrativa** (`docker compose`, healthchecks, este README, despliegue) | Reduce el costo de evaluar y de operar; lo dejé al final a propósito | Completo (despliegue documentado, no ejecutado) |
+| 5 | **Infra y narrativa** (`docker compose`, healthchecks, este README, despliegue) | Reduce el costo de evaluar y de operar; lo dejé al final a propósito | Completo (ACTIVO en Cloud Run, ver [§0.1](#01-estado-del-despliegue-activo)) |
 
 **Recortes conscientes** (declarados, no olvidados):
 
 - Sin tests automatizados de frontend: el presupuesto de pruebas se gastó donde hay lógica de negocio (mapper puro + algoritmo + contratos HTTP).
-- Sin despliegue cloud ejecutado: no hay cuenta/proyecto disponible. La guía es reproducible paso a paso y cada comando está explicado.
+- El despliegue cloud **sí está ejecutado**: tres servicios activos en Cloud Run (§0.1). Lo que queda fuera
+  del repositorio son las credenciales de Neon y los datos personales; no hay URLs inventadas.
 
 Los diagramas del Reto 3 no son un recorte: se entregan `.drawio` (fuente editable) **y** `.png`
 ya generados a 2× con fondo blanco desde el propio XML vía
@@ -426,11 +455,12 @@ y el navegador hace CORS directo contra cada backend** — por eso ambos backend
 
 ## 8. Despliegue en GCP (Cloud Run + Neon) — script definitivo
 
-> **Estado:** `deploy-gcp.sh` y `cloudbuild-frontend.yaml` están **cerrados** y validados con dry
-> checks locales (`bash -n`, `shellcheck`, `docker compose config -q`, parseo del YAML). **No se ha
-> ejecutado nada contra GCP todavía**: la primera ejecución es el despliegue real. El repositorio no
-> contiene URLs reales ni credenciales; valores como `ep-xxx…` o `<usuario>` son lo que se exporta en
-> la terminal del operador, nunca ficheros versionados.
+> **Estado:** **ACTIVO en Cloud Run (`us-central1`) y verificado end-to-end** — ver
+> [§0.1](#01-estado-del-despliegue-activo) para las tres URLs largas canónicas y el smoke ejecutado.
+> `deploy-gcp.sh` y `cloudbuild-frontend.yaml` están cerrados y, además de los dry checks locales
+> (`bash -n`, `shellcheck`, `docker compose config -q`, parseo del YAML), se ejecutaron contra GCP.
+> El repositorio no contiene credenciales ni datos personales; valores como `ep-xxx…` o `<usuario>`
+> se exportan en la terminal del operador, nunca en ficheros versionados.
 
 > **Requisito para desplegar:** bash. En Windows se ejecuta desde **Git Bash** o **WSL**; el
 > `.gitattributes` del repositorio fuerza LF en los `.sh`, así que el clon no llega con CRLF.
@@ -457,10 +487,11 @@ Cloud Run: frontend (nginx + SPA React, puerto 8080)
   host público con `DB_SSL=true` (Neon rechaza conexiones sin TLS).
 - El frontend **no** usa el proxy interno de nginx en la nube: se compila con las URLs absolutas de
   cada backend y CORS se configura en ellos. El proxy se conserva solo para `docker compose`.
-- **La URL canónica es la larga:** `https://<servicio>-<PROJECT_NUMBER>.<REGION>.run.app`. La que
-  devuelve `status.url` (`…-<hash>-<region>.a.run.app`) es una variante corta que el navegador no
-  envía como `Origin`; el script calcula y propaga siempre la larga (con respaldo en la anotación
-  `run.googleapis.com/urls` del servicio si Cloud Resource Manager no está disponible).
+- **La URL canónica es la larga:** `https://<servicio>-<PROJECT_NUMBER>.<REGION>.run.app` (en esta
+  entrega, `https://frontend-919990628042.us-central1.run.app`). La que devuelve `status.url`
+  (`…-<hash>-<region>.a.run.app`) es una variante corta que el navegador no envía como `Origin`; el
+  script calcula y propaga siempre la larga (con respaldo en la anotación `run.googleapis.com/urls`
+  del servicio si Cloud Resource Manager no está disponible).
 
 ### 8.2 Variables de entorno requeridas
 
@@ -479,7 +510,7 @@ Cloud Run: frontend (nginx + SPA React, puerto 8080)
 | `JWT_SECRET` | sí | Firma HS256 (≥16) | **Nunca en el repo**; se lee del entorno del operador y se inyecta al servicio como variable de entorno |
 | `ENABLE_DEMO_TOKEN` | no | Emisor de token demo | `true`: el jurado necesita autenticarse |
 | `DEMO_TOKEN_TTL_SECONDS` / `_MINUTES` | no | Vida del token demo | `3600` s (1 hora) por defecto |
-| `CORS_ORIGINS` | no | Lista de orígenes separada por comas | Vacía hasta `update-cors`; debe ser la URL **larga canónica** del frontend; **nunca `*`** en Cloud Run |
+| `CORS_ORIGINS` | no | Lista de orígenes separada por comas | Vacía hasta `update-cors`; en el despliegue activo vale la URL **larga canónica** del frontend (`https://frontend-919990628042.us-central1.run.app`); **nunca `*`** en Cloud Run |
 | `MAX_INSTANCES` | no | Tope de réplicas | `3`, para no agotar conexiones de Neon |
 
 `PORT`, `NODE_ENV`, `DB_SSL` y `DB_SYNCHRONIZE` no se pasan a mano: Cloud Run inyecta `PORT`; la
@@ -535,6 +566,11 @@ Paso a paso (equivalente y depurable):
 ### 8.5 Verificación post-despliegue
 
 ```bash
+# URLs reales del despliegue activo (largas canónicas, ver §0.1)
+URL_FRONTEND="https://frontend-919990628042.us-central1.run.app"
+URL_ENDORSEMENTS="https://endorsements-919990628042.us-central1.run.app"
+URL_ROUTES="https://routes-919990628042.us-central1.run.app"
+
 ./deploy-gcp.sh urls
 curl -s "$URL_ENDORSEMENTS/health"
 curl -s "$URL_ROUTES/health"
@@ -550,8 +586,8 @@ curl -s -X POST "$URL_ENDORSEMENTS/v1/endorse/translate" \
 ```
 
 En el navegador: abrir la URL **larga canónica** del frontend
-(`https://frontend-<PROJECT_NUMBER>.<REGION>.run.app`), pulsar *Traducir* y comprobar en *Network*
-que la llamada sale hacia `https://endorsements-<PROJECT_NUMBER>.<REGION>.run.app`, no hacia
+(`https://frontend-919990628042.us-central1.run.app`), pulsar *Traducir* y comprobar en *Network*
+que la llamada sale hacia `https://endorsements-919990628042.us-central1.run.app`, no hacia
 `/endorse-api`. Los indicadores de salud deben estar en verde: eso prueba que el `Origin` largo
 coincide con `CORS_ORIGINS`.
 
@@ -573,7 +609,7 @@ curl -i -X OPTIONS "$URL_ENDORSEMENTS/v1/endorse/translate" \
   como lista explícita (coma separada). La URL del frontend solo existe después de desplegarlo, así
   que el primer deploy de los backends va sin CORS y `update-cors` fija luego el origen exacto. El
   `Origin` que envía el navegador es la URL **larga**
-  (`https://frontend-<PROJECT_NUMBER>.<REGION>.run.app`), **no** la corta
+  (`https://frontend-919990628042.us-central1.run.app`), **no** la corta
   (`https://frontend-<hash>-<region>.a.run.app`) que aparece en `status.url`. `update-cors` calcula
   siempre la larga; fijar la corta produce el bug de alineación: el preflight con el `Origin` real no
   devuelve `Access-Control-Allow-Origin` y el frontend queda en rojo. Un `Origin` ajeno **no** recibe
@@ -609,10 +645,10 @@ curl -i -X OPTIONS "$URL_ENDORSEMENTS/v1/endorse/translate" \
 - **Sin framework de migraciones**: el esquema se crea con `DB_SYNCHRONIZE=true` una sola vez y
   después el servicio corre con `DB_SYNCHRONIZE=false`. Versionar migraciones TypeORM queda fuera del
   alcance de esta entrega y es el primer trabajo a añadir si el proyecto sigue.
-- **Primera ejecución pendiente por diseño**: el script está cerrado y validado en seco, pero ningún
-  comando se ha lanzado contra GCP en este entorno. La evidencia local es `bash -n`, `shellcheck`,
-  `docker compose config -q`, el fallo limpio de `preflight` sin credenciales y el parseo del YAML.
-  El orden exacto para ejecutarlo está en §8.3.
+- **Despliegue ejecutado y verificado**: los tres servicios corren en Cloud Run (`us-central1`) y el
+  smoke E2E está descrito en [§0.1](#01-estado-del-despliegue-activo). La evidencia local previa
+  (`bash -n`, `shellcheck`, `docker compose config -q`, parseo del YAML) se mantiene como control de
+  los artefactos, no como sustituto de la ejecución real. El orden reproducible está en §8.3.
 
 ### 8.8 Alternativa sin GCP (Render / Railway)
 
@@ -731,11 +767,11 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
   `python3 architecture-drawio/render_drawio.py`; si se edita el `.drawio` y se prefiere la
   herramienta oficial, `File → Export as → PNG` (escala 200%, borde 10, sin transparencia) da un
   resultado equivalente.
-- **Despliegue cloud**: los artefactos (`deploy-gcp.sh`, `cloudbuild-frontend.yaml`, los tres
-  `.gcloudignore`) están creados y validados con dry checks locales (`bash -n`, `shellcheck`,
-  `docker compose config -q`, parseo del YAML); **no** se ejecutaron contra GCP porque no hay
-  cuenta/proyecto disponible. Todas las URLs del despliegue son placeholders (`ep-xxx…`,
-  `<tu-frontend>`): no hay valores inventados.
+- **Despliegue cloud**: **ACTIVO** en Cloud Run (`us-central1`); las URLs reales están en
+  [§0.1](#01-estado-del-despliegue-activo) y no hay placeholders de URL de Cloud Run. Los únicos
+  placeholders que quedan son los de la alternativa Render/Railway (§8.8), las credenciales/host de
+  Neon (`ep-xxx…`) y los datos personales del correo de entrega: se declaran como tales y no se
+  inventan.
 - **Preflight de origen hostil en Hapi**: responde `200 {"message":"CORS error: Origin not allowed"}`
   en lugar de `204`, porque Hapi resuelve el CORS antes de llegar al `preflightStatusCode` de la ruta.
   Lo relevante es que **no** emite `Access-Control-Allow-Origin`, que es lo que prueba el control
@@ -801,4 +837,4 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 | `curl .../endorse/translate` sin `Authorization` | OK — `401 UNAUTHORIZED` |
 | Grep de hardcode (`ProductosVida\\|TES008\\|EndososSimplesSACRumbo` en `src/`, excluyendo `seed`) | OK — sin resultados: el negocio vive en la plantilla, no en el código |
 | `python3 architecture-drawio/render_drawio.py` | OK — `as-is.png` (2240×1760) y `to-be.png` (3200×3200), fondo blanco opaco |
-| Despliegue en la nube (§8) | **No ejecutado**: requiere cuenta/proyecto. La guía es reproducible, pero no está validada contra un entorno real |
+| Despliegue en la nube (§8) | **ACTIVO** — 3 servicios Cloud Run (`us-central1`); smoke E2E `200` en Reto 1 y Reto 2, CORS con control positivo y negativo, frontend con indicadores operativos (ver [§0.1](#01-estado-del-despliegue-activo)) |

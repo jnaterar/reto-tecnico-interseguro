@@ -1,8 +1,8 @@
 # Correo de entrega — Reto Técnico Interseguro
 
-> Plantilla lista para enviar. Los valores entre `<>` son los únicos que debes completar
-> (nombre, cargo, contacto, repositorio y URLs). **Ninguna URL de despliegue está inventada**:
-> queda marcada como pendiente hasta ejecutar la guía de despliegue del README (§8).
+> Plantilla lista para enviar. Las **URLs de despliegue son reales y están verificadas** (ver §0.1 del
+> README); los únicos valores entre `<>` son datos personales y el repositorio, que no se inventan y
+> quedan como placeholder explícito hasta que los completes.
 
 ---
 
@@ -19,8 +19,9 @@ en Interseguro. Envío la entrega completa del reto técnico: los tres ejercicio
 frontend que los unifica, en un único repositorio reproducible.
 
 - **Repositorio:** `<URL_REPO>` (rama `main`)
-- **Demo desplegada:** `<URL_DEMO_FRONTEND>` — *pendiente de despliegue; los artefactos están
-  listos y validados en local, ver más abajo*
+- **Demo desplegada (activa):** https://frontend-919990628042.us-central1.run.app
+- **APIs desplegadas:** https://endorsements-919990628042.us-central1.run.app (Reto 1) ·
+  https://routes-919990628042.us-central1.run.app (Reto 2)
 - **Documento principal:** el `README.md` del repositorio. Está pensado para leerse en unos
   15 minutos y contiene el resumen ejecutivo, las trampas de cada reto, las decisiones y los
   comandos exactos que ejecuté.
@@ -37,13 +38,14 @@ docker compose up --build
 Cuando los cuatro servicios estén *healthy*, abre **http://localhost:8080**. El token de demo se
 pide solo, no hay que configurar nada.
 
-**En el despliegue, en tres pasos (cuando la URL esté publicada):**
+**En el despliegue, en tres pasos:**
 
-1. Abre `<URL_DEMO_FRONTEND>` en el navegador.
+1. Abre https://frontend-919990628042.us-central1.run.app en el navegador.
 2. Pestaña **Traductor de endosos** → botón **Traducir** (el JSON de ejemplo ya viene cargado).
 3. Pestaña **Ruta óptima de grúa** → elige un distrito y marca las bases → **Calcular ruta**.
 
-Si el despliegue aún no está arriba, esos mismos tres pasos funcionan igual en `localhost:8080`.
+El despliegue está verificado end-to-end; los mismos tres pasos funcionan igual en `localhost:8080`
+con `docker compose up --build`.
 
 ## Credenciales de prueba
 
@@ -90,12 +92,30 @@ corporativo se apaga con `ENABLE_DEMO_TOKEN=false` y los tokens los emite el IdP
 
 ## Sobre el despliegue
 
-El despliegue está **preparado y validado en local, no ejecutado** contra GCP, porque no cuento con
-un proyecto activo en este momento. Entrego el script `deploy-gcp.sh` como versión definitiva, por
-subcomandos y en este orden: `preflight`, `ensure-ar`, `bootstrap-db`, `build`, `deploy`, `urls` y
-`update-cors` (`./deploy-gcp.sh all` los encadena). Se acompaña del `cloudbuild-frontend.yaml` que
-inyecta las URLs del frontend en tiempo de build. El procedimiento exacto, con las variables que hay
-que exportar antes de ejecutarlo, está en la sección 8 del README.
+El despliegue está **ejecutado y activo** en Cloud Run (`us-central1`): tres servicios
+(`frontend`, `endorsements` y `routes`) contra Neon Postgres como base administrada. El script
+`deploy-gcp.sh` queda como versión reproducible, por subcomandos y en este orden: `preflight`,
+`ensure-ar`, `bootstrap-db`, `build`, `deploy`, `urls` y `update-cors` (`./deploy-gcp.sh all` los
+encadena). Se acompaña del `cloudbuild-frontend.yaml` que inyecta las URLs del frontend en tiempo de
+build. El procedimiento exacto, con las variables que hay que exportar antes de ejecutarlo, está en
+la sección 8 del README.
+
+**Smoke verificado contra el despliegue activo:**
+
+- **Reto 1 —** `POST /v1/endorse/translate` → `200`; `eventEntity.description = "SolicitarEndoso"`
+  con **12** entradas en `dynamicData`, preservando `'Default'` y `''` como valores distintos.
+- **Reto 2 —** `POST /v1/routes/optimal` → `200`; respuesta `{fromDepot, to, path, distance: 7}`
+  sobre el grafo **no dirigido** (accidente `San Isidro`, base `Miraflores`).
+- **CORS —** control positivo: el `Origin` del frontend recibe `Access-Control-Allow-Origin`;
+  control negativo: un `Origin` hostil (`https://evil.example.com`) **no** recibe esa cabecera.
+- **Frontend —** los indicadores de salud de ambos backends están operativos.
+
+**Nota de CORS (bug de alineación de URL).** El `Origin` que envía el navegador es la URL **larga
+canónica** (`https://frontend-919990628042.us-central1.run.app`). `gcloud run services describe`
+expone en `status.url` una variante **corta** (`https://frontend-<hash>-<region>.a.run.app`) que el
+navegador **no** usa como `Origin`: fijar la corta en `CORS_ORIGINS` deja el frontend con los
+indicadores en rojo porque el preflight no devuelve `Access-Control-Allow-Origin`. Por eso
+`update-cors` propaga siempre la larga; la misma nota está en el README (§6 y §8.6).
 
 Las credenciales (`JWT_SECRET`, `DB_PASSWORD`) no viven en el repositorio ni en ficheros versionados:
 se exportan en la terminal del operador y el script las inyecta en Cloud Run como variables de
@@ -103,8 +123,9 @@ entorno. Es una decisión consciente para una demo pública: simplifica el despl
 de que quien pueda leer la configuración del servicio verá esos valores; se rotan al terminar.
 
 El único paso que no puede automatizarse de antemano es `update-cors`: la URL del frontend no existe
-hasta que el frontend está desplegado, y los backends necesitan conocerla. Mientras tanto corren con
-lista vacía, que es el estado seguro (rechaza todos los orígenes).
+hasta que el frontend está desplegado, y los backends necesitan conocerla. En el despliegue activo
+`update-cors` ya se ejecutó y `CORS_ORIGINS` apunta a la URL larga canónica del frontend; antes de ese
+paso los backends corren con lista vacía, que es el estado seguro (rechaza todos los orígenes).
 
 ## Transparencia sobre el estado
 
@@ -112,12 +133,12 @@ lista vacía, que es el estado seguro (rechaza todos los orígenes).
   servicio de rutas, `typecheck` y `build` limpios en frontend y backend, `docker compose config`
   válido y `docker compose up -d --build` levantando 4 servicios *healthy* más el seed y un flujo
   end-to-end a través de nginx.
-- **CORS con control negativo:** el preflight desde el origen permitido devuelve `204` con el
-  origen exacto en `Access-Control-Allow-Origin`; desde `http://evil.example.com` no se emite esa
-  cabecera. También está cubierto por tests unitarios en ambos backends.
-- **Despliegue en GCP:** artefactos creados y validados con dry checks locales (`bash -n`,
-  `shellcheck`, parseo del YAML); no ejecutados contra la nube. Las URLs del correo y del README
-  son placeholders, no valores inventados.
+- **CORS con control positivo y negativo:** el preflight desde el origen largo canónico del frontend
+  devuelve `Access-Control-Allow-Origin`; desde `https://evil.example.com` no se emite esa cabecera.
+  También está cubierto por tests unitarios en ambos backends.
+- **Despliegue en GCP:** **activo y verificado end-to-end** en Cloud Run (`us-central1`); el smoke
+  de ambos retos, el control de CORS y los indicadores del frontend están descritos arriba y en §0.1
+  del README. No se inventó ninguna URL ni credencial.
 - **Pendientes declarados:** tests automatizados del frontend, un framework de migraciones en lugar
   de `DB_SYNCHRONIZE`, e integración con el IdP real (OIDC/JWKS) en lugar del token de demo.
 
