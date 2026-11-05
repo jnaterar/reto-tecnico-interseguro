@@ -633,7 +633,7 @@ export function EndorseTab() {
                 </span>
               ) : selected ? (
                 <div className="select-selected-content">
-                  <span className={`select-product-pill pill-${selected.productName.toLowerCase()}`}>
+                  <span className="select-product-pill">
                     {selected.productName}
                   </span>
                   <span className="select-type-label">
@@ -678,7 +678,7 @@ export function EndorseTab() {
                       onClick={() => void handleSelectTemplate(item)}
                     >
                       <div className="option-left-content">
-                        <span className={`select-product-pill pill-${item.productName.toLowerCase()}`}>
+                        <span className="select-product-pill">
                           {item.productName}
                         </span>
                         <span className="option-name-text">

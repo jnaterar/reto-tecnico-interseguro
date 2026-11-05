@@ -643,7 +643,7 @@ p {
 }
 
 .secondary-stat-card .stat-number {
-  font-size: clamp(1.35rem, 2vw, 1.75rem);
+  font-size: clamp(1.2rem, 1.8vw, 1.6rem);
   font-weight: 800;
   color: #0284c7;
   line-height: 1.1;
@@ -682,25 +682,23 @@ p {
   margin-top: 6px;
 }
 
-/* Consola de navegación central y prominente de los 3 Retos */
+/* Consola de navegación de los 3 Retos — Contenedor unificado de ancho completo con bordes fusionados */
 .tab-deck-wrapper {
-  margin-bottom: 32px;
-  display: flex;
-  justify-content: center;
+  margin-bottom: 28px;
   width: 100%;
 }
 
 .tab-bar-prominent {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 0;
+  padding: 0;
   width: 100%;
-  max-width: 980px;
   background: #f8fafc;
-  padding: 8px;
-  border-radius: 18px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
-  box-shadow: 0 4px 16px -4px rgba(15, 23, 42, 0.06), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .tab {
@@ -709,41 +707,40 @@ p {
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  padding: 14px 18px;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  background: transparent;
+  padding: clamp(14px, 1.8vw, 20px) clamp(16px, 2.2vw, 24px);
+  border: none;
+  border-top: 3.5px solid transparent;
+  background: #f8fafc;
   cursor: pointer;
   font-family: inherit;
   color: var(--text);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   text-align: left;
+}
+
+.tab:not(:last-child) {
+  border-right: 1px solid var(--border);
 }
 
 .tab:hover:not(.is-active) {
   background: #ffffff;
-  border-color: #e2e8f0;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
 }
 
 .tab.is-active {
   background: #ffffff;
-  border-color: #cbd5e1;
-  box-shadow: 0 8px 20px -4px rgba(15, 23, 42, 0.09), 0 3px 6px -2px rgba(15, 23, 42, 0.04);
-  transform: translateY(-2px);
+  z-index: 1;
 }
 
 .tab.tab-endorse.is-active {
-  border-top: 3px solid #2563eb;
+  border-top-color: #2563eb;
 }
 
 .tab.tab-routes.is-active {
-  border-top: 3px solid #7c3aed;
+  border-top-color: #7c3aed;
 }
 
 .tab.tab-architecture.is-active {
-  border-top: 3px solid #10b981;
+  border-top-color: #10b981;
 }
 
 .tab-badge-row {
@@ -927,16 +924,9 @@ p {
   padding: 3px 8px;
   border-radius: 6px;
   flex-shrink: 0;
-}
-
-.pill-auto {
   background: #dbeafe;
   color: #1e40af;
-}
-
-.pill-rumbo {
-  background: #ede9fe;
-  color: #6d28d9;
+  border: 1px solid #bfdbfe;
 }
 
 .select-type-label {
@@ -2892,18 +2882,37 @@ button.code-copy-button.is-copied,
   }
 
   .tab-deck-wrapper {
-    margin-bottom: 24px;
+    margin-bottom: 20px;
   }
 
   .tab-bar-prominent {
     grid-template-columns: 1fr;
-    padding: 6px;
-    gap: 6px;
+    border-radius: var(--radius);
+    padding: 0;
+    gap: 0;
   }
 
   .tab {
     width: 100%;
-    padding: 12px 14px;
+    padding: 14px 16px;
+    border-right: none;
+    border-top: none;
+  }
+
+  .tab:not(:last-child) {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab.tab-endorse.is-active {
+    border-left: 4px solid #2563eb;
+  }
+
+  .tab.tab-routes.is-active {
+    border-left: 4px solid #7c3aed;
+  }
+
+  .tab.tab-architecture.is-active {
+    border-left: 4px solid #10b981;
   }
 
   .page-retos-container,
