@@ -17,6 +17,16 @@ import (
 // apiVersion se expone en cabecera para evidenciar versionamiento (/v1).
 const apiVersion = "v1"
 
+// defaultScope y allowedScopes acotan el token de demo a los endpoints del
+// reto. El cliente NO puede pedir un scope arbitrario: si lo hiciera, el token
+// podría servir para futuros endpoints administrativos.
+const defaultScope = "routes:optimal"
+
+var allowedScopes = map[string]struct{}{
+	"routes:optimal": {},
+	"routes:read":    {}, // compatibilidad con tokens ya emitidos
+}
+
 type contextKey string
 
 const claimsContextKey contextKey = "claims"
@@ -26,20 +36,36 @@ type Server struct {
 	routes          *service.RouteService
 	auth            *auth.Service
 	enableDemoToken bool
-	allowedOrigin   string
+	allowedOrigins  []string
+	allowAnyOrigin  bool
 	mux             *http.ServeMux
 }
 
 // NewServer construye el enrutador con middleware de CORS, logging y JWT.
-func NewServer(routes *service.RouteService, authService *auth.Service, enableDemoToken bool, allowedOrigin string) *Server {
-	if allowedOrigin == "" {
-		allowedOrigin = "*"
+//
+// `allowedOrigins` es una lista explícita. `*` solo se admite para desarrollo
+// local; en Cloud Run se pasa la URL exacta del frontend.
+func NewServer(routes *service.RouteService, authService *auth.Service, enableDemoToken bool, allowedOrigins []string) *Server {
+	normalized := make([]string, 0, len(allowedOrigins))
+	allowAny := false
+	for _, origin := range allowedOrigins {
+		origin = strings.TrimSpace(strings.TrimRight(origin, "/"))
+		if origin == "" {
+			continue
+		}
+		if origin == "*" {
+			allowAny = true
+			continue
+		}
+		normalized = append(normalized, origin)
 	}
+
 	s := &Server{
 		routes:          routes,
 		auth:            authService,
 		enableDemoToken: enableDemoToken,
-		allowedOrigin:   allowedOrigin,
+		allowedOrigins:  normalized,
+		allowAnyOrigin:  allowAny,
 	}
 
 	mux := http.NewServeMux()
@@ -80,7 +106,11 @@ func (s *Server) handleDemoToken(w http.ResponseWriter, r *http.Request) {
 		req.Subject = "demo-client"
 	}
 	if req.Scope == "" {
-		req.Scope = "routes:read"
+		req.Scope = defaultScope
+	}
+	if _, ok := allowedScopes[req.Scope]; !ok {
+		writeError(w, domain.NewValidationError("scope", "scope no permitido para el token de demo (usa "+defaultScope+")"))
+		return
 	}
 
 	token, expiresAt, err := s.auth.Issue(req.Subject, req.Scope)
@@ -137,20 +167,58 @@ func (s *Server) withAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, domain.NewUnauthorizedError("token inválido o expirado"))
 			return
 		}
+		// El token debe traer un scope del reto: uno con otro scope no sirve
+		// para este endpoint (defensa en profundidad sobre el demo token).
+		if _, ok := allowedScopes[claims.Scope]; !ok {
+			writeError(w, domain.NewForbiddenError("el token no tiene un scope autorizado para este endpoint"))
+			return
+		}
 
 		ctx := context.WithValue(r.Context(), claimsContextKey, claims)
 		next(w, r.WithContext(ctx))
 	}
 }
 
+// originAllowed compara el Origin recibido contra la lista configurada.
+// Sin lista (ni `*`) no se emite ninguna cabecera CORS.
+func (s *Server) originAllowed(origin string) bool {
+	if s.allowAnyOrigin {
+		return true
+	}
+	if origin == "" {
+		return false
+	}
+	for _, allowed := range s.allowedOrigins {
+		if allowed == origin {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", s.allowedOrigin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		w.Header().Set("Access-Control-Max-Age", "600")
+		origin := r.Header.Get("Origin")
+		allowed := s.originAllowed(origin)
+
+		if s.allowAnyOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		} else if allowed {
+			// Se refleja el origen exacto (no `*`): un origen hostil no recibe
+			// la cabecera y el navegador bloquea la lectura de la respuesta.
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+		}
 
 		if r.Method == http.MethodOptions {
+			// Preflight: 204 siempre; las cabeceras de permiso solo si el
+			// origen está autorizado.
+			if allowed {
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-API-Version")
+				w.Header().Set("Access-Control-Expose-Headers", "X-API-Version")
+				w.Header().Set("Access-Control-Max-Age", "600")
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,16 +27,19 @@ func main() {
 	if secret == "" {
 		log.Fatal("JWT_SECRET es obligatorio (mínimo 16 caracteres); defínelo en el entorno o inyéctalo desde Secret Manager")
 	}
-	ttlMinutes := getEnvInt("JWT_TTL_MINUTES", 60)
+	ttlMinutes := getEnvInt("JWT_TTL_MINUTES", 15)
 	enableDemoToken := getEnv("ENABLE_DEMO_TOKEN", "true") == "true"
-	allowedOrigin := getEnv("CORS_ORIGIN", "*")
+	// Lista explícita de orígenes (coma separada). CORS_ORIGIN se acepta como
+	// alias de una sola entrada. Sin valor, no se emite CORS (seguro por
+	// defecto); `*` solo debe usarse en desarrollo local.
+	allowedOrigins := splitCSV(getEnv("CORS_ORIGINS", getEnv("CORS_ORIGIN", "")))
 
 	authService, err := auth.NewService(secret, time.Duration(ttlMinutes)*time.Minute)
 	if err != nil {
 		log.Fatalf("configuración de auth inválida: %v", err)
 	}
 
-	server := httpapi.NewServer(service.NewRouteService(), authService, enableDemoToken, allowedOrigin)
+	server := httpapi.NewServer(service.NewRouteService(), authService, enableDemoToken, allowedOrigins)
 
 	httpServer := &http.Server{
 		Addr:              ":" + port,
@@ -70,6 +74,17 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func getEnvInt(key string, fallback int) int {
