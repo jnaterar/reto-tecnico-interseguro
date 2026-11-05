@@ -16,7 +16,7 @@ Servicio de cálculo de rutas óptimas para asignación de grúas (Reto 2).
 |---|---|---|
 | `PORT` | `8081` | Puerto HTTP (mismo valor en local y en Docker) |
 | `JWT_SECRET` | `dev-secret-change-me-please` | Firma HS256 (mínimo 16 caracteres) |
-| `JWT_TTL_MINUTES` | `15` | Vida del token (rango razonable para una demo: 15–60) |
+| `JWT_TTL_MINUTES` | `60` | Vida del token (1 hora: una sesión de evaluación completa) |
 | `ENABLE_DEMO_TOKEN` | `true` | Habilita `/v1/auth/token` (token acotado a `routes:optimal`) |
 | `CORS_ORIGINS` | vacío | Lista de orígenes separados por coma (nunca `*` en producción) |
 | `CORS_ORIGIN` | — | Compatibilidad: se usa solo si `CORS_ORIGINS` está vacía |

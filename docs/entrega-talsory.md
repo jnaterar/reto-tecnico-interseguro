@@ -1,136 +1,123 @@
-# Correo de entrega — Talsory
+# Correo de entrega — Reto Técnico Interseguro
 
-> Borrador listo para enviar. Los valores entre `<>` son los únicos que deben completarse
-> (repositorio y URLs). No inventar URLs de despliegue: se dejan marcadas como pendientes.
+> Plantilla lista para enviar. Los valores entre `<>` son los únicos que debes completar
+> (nombre, cargo, contacto, repositorio y URLs). **Ninguna URL de despliegue está inventada**:
+> queda marcada como pendiente hasta ejecutar la guía de despliegue del README (§8).
 
 ---
 
-**Para:** `<contacto@talsory>`
-**CC:** `<equipo-interseguro>`
+**Para:** `<nombre-del-contacto>` · `<contacto@talsory>`
+**CC:** `<equipo-de-reclutamiento>`
 **Asunto:** Entrega del reto técnico — Traductor de endosos, rutas óptimas de grúa y arquitectura de préstamos
 
 ---
 
-Hola `<nombre>`,
+Hola `<nombre-del-contacto>`:
 
-Adjunto la entrega del reto técnico solicitado por Interseguro. El trabajo está en un único
-repositorio con los cuatro entregables ejecutables y verificados:
+Gracias por la oportunidad de participar en el proceso para **Software Architect / Technical Lead**
+en Interseguro. Envío la entrega completa del reto técnico: los tres ejercicios resueltos más el
+frontend que los unifica, en un único repositorio reproducible.
 
-- **Repositorio:** `<URL_REPO>`
-- **Demo (frontend unificado):** `<URL_DEMO_FRONTEND>` *(pendiente de despliegue; ver nota al final)*
+- **Repositorio:** `<URL_REPO>` (rama `main`)
+- **Demo desplegada:** `<URL_DEMO_FRONTEND>` — *pendiente de despliegue; los artefactos están
+  listos y validados en local, ver más abajo*
+- **Documento principal:** el `README.md` del repositorio. Está pensado para leerse en unos
+  15 minutos y contiene el resumen ejecutivo, las trampas de cada reto, las decisiones y los
+  comandos exactos que ejecuté.
 
-## Qué incluye
+## Cómo evaluarlo
 
-1. **Traductor de endosos** (`Node + Hapi + TypeORM + PostgreSQL`): el mapeo entre el JSON plano
-   de la interfaz y el JSON estructurado del core **vive en la base de datos**, no en el código.
-   Plantillas, etiquetas y orden se resuelven desde tablas (`templates`, `template_fields`,
-   `template_events`), por lo que **agregar un producto o tipo de endoso es un `INSERT`, no un deploy**.
-2. **Ruta óptima de grúa** (`Go`, sólo librería estándar, sin dependencias): grafo **no dirigido**
-   normalizado, Dijkstra con `container/heap`, bases evaluadas de forma independiente y errores
-   tipados que distinguen *nodo inexistente* (`NODE_NOT_FOUND`) de *inalcanzable* (`UNREACHABLE`).
-3. **Frontend unificado** (`React + TypeScript estricto + Vite`): pestaña «Traductor de endosos»
-   con el JSON de ejemplo precargado y botón *Traducir*; pestaña «Ruta óptima de grúa» con selector
-   de distrito y checklist de bases. Las dos consumen sus backends reales.
-4. **Arquitectura del flujo de préstamos** (documento + diagramas editables): el dinero se duplica
-   porque **falta idempotencia**, no porque falte timeout. Se propone `Idempotency-Key` persistida,
-   `UNIQUE` como control de concurrencia, outbox/evento, saga con compensación, máquina de estados
-   y reconciliación, sobre **Cloud Run + Pub/Sub** (≈600 préstamos/día no justifican Kafka/Kubernetes).
-
-## Cómo levantarlo (un comando)
+**En local, con un solo comando:**
 
 ```bash
 git clone <URL_REPO> && cd reto-tecnico-interseguro
 docker compose up --build
 ```
 
-- Frontend: http://localhost:8080
-- Endosos (health): http://localhost:8082/health
-- Rutas (health): http://localhost:8081/health
-- PostgreSQL: `localhost:5433`
+Cuando los cuatro servicios estén *healthy*, abre **http://localhost:8080**. El token de demo se
+pide solo, no hay que configurar nada.
+
+**En el despliegue, en tres pasos (cuando la URL esté publicada):**
+
+1. Abre `<URL_DEMO_FRONTEND>` en el navegador.
+2. Pestaña **Traductor de endosos** → botón **Traducir** (el JSON de ejemplo ya viene cargado).
+3. Pestaña **Ruta óptima de grúa** → elige un distrito y marca las bases → **Calcular ruta**.
+
+Si el despliegue aún no está arriba, esos mismos tres pasos funcionan igual en `localhost:8080`.
 
 ## Credenciales de prueba
 
 No hay usuarios ni contraseñas reales. La autenticación es un **JWT HS256 de demo** que emite cada
-backend; el frontend lo obtiene de forma transparente.
+backend y que el frontend obtiene de forma transparente.
 
 | Dato | Valor |
 |---|---|
-| Emisor Reto 1 | `POST http://localhost:8082/v1/auth/token` (cuerpo `{}`) |
-| Emisor Reto 2 | `POST http://localhost:8081/v1/auth/token` (cuerpo `{}`) |
-| Secreto local | `dev-secret-change-me-please` (`JWT_SECRET`, sólo local) |
-| Vigencia | 3600 s en local; **900 s (15 min)** por default en producción |
-| Scope | `endorse:translate` (endosos) y `routes:optimal` (rutas); cualquier otro se rechaza con `400`, y un token con scope ajeno recibe `403` |
+| Emisor Reto 1 | `POST /v1/auth/token` en el servicio de endosos (cuerpo `{}`) |
+| Emisor Reto 2 | `POST /v1/auth/token` en el servicio de rutas (cuerpo `{}`) |
+| Secreto local | `dev-secret-change-me-please` (`JWT_SECRET`, solo local; en la nube va por Secret Manager) |
+| Vigencia | 3600 s (1 hora) en todos los entornos |
+| Alcance | `endorse:translate` (endosos) y `routes:optimal` (rutas); cualquier otro scope se rechaza con `400` al emitir y con `403` al consumir |
 
-El token de demo se mantiene encendido en el despliegue (`ENABLE_DEMO_TOKEN=true`) para que el jurado
-pueda autenticarse, pero es de mínimos privilegios: no hay endpoints administrativos y la vida es corta.
-En un escenario corporativo se apagaría con `ENABLE_DEMO_TOKEN=false` y los tokens los emitiría el IdP.
+El emisor de demo queda encendido en el despliegue (`ENABLE_DEMO_TOKEN=true`) para que puedas
+autenticarte sin infraestructura adicional, pero es de **mínimos privilegios**: no hay endpoints
+administrativos, cada ruta exige su scope y la lista de orígenes CORS está cerrada. En un escenario
+corporativo se apaga con `ENABLE_DEMO_TOKEN=false` y los tokens los emite el IdP.
 
-## Cómo está construido y cómo prioricé
+## Cinco decisiones que explican el resto
 
-**Arquitectura.** Ambos backends siguen el mismo corte por capas: `Routes → Controller → Service →
-Repository (puerto) → Adaptador/Modelo`, con el mapeo y el algoritmo como **funciones puras** en el
-dominio. Los errores son tipos con código y HTTP propio, no strings; el envelope es idéntico en los
-dos servicios, lo que permite al frontend tener un único manejador de errores.
+1. **El negocio vive en la base de datos, no en el código.** El mapeo del traductor de endosos se
+   resuelve desde plantillas (`templates`, `template_fields`, `template_events`). Agregar un
+   producto o un tipo de endoso es un `INSERT`, no un *deploy*. Es la diferencia entre resolver el
+   caso de hoy y resolver el siguiente.
+2. **Grafo no dirigido y errores tipados.** El grafo se normaliza en ambos sentidos, Dijkstra corre
+   sobre `container/heap` y cada base se evalúa de forma independiente. Distingo *nodo inexistente*
+   (`NODE_NOT_FOUND`) de *inalcanzable* (`UNREACHABLE`) porque son incidentes distintos para quien
+   opera la grúa.
+3. **En préstamos, la causa raíz es la falta de idempotencia, no el timeout.** Un `502` no duplica
+   dinero por sí solo; lo duplica reintentar sin una llave idempotente. Propongo `Idempotency-Key`
+   persistida, un `UNIQUE` como control de concurrencia, outbox/saga con compensación y una máquina
+   de estados con reconciliación sobre **Cloud Run + Pub/Sub**. Con ~600 préstamos/día, Kafka y
+   Kubernetes serían coste sin beneficio.
+4. **Despliegue sin estado y configurable.** Tres servicios en Cloud Run (nginx, Node/Hapi, Go
+   distroless) contra **Neon Postgres** externo, con endpoint *pooled* para el runtime y *directo*
+   para el bootstrap. Toda la configuración entra por variables de entorno validadas al arrancar:
+   el proceso falla rápido si falta algo, en lugar de arrancar a medias.
+5. **Seguridad proporcional a una demo pública.** CORS por lista blanca con reflexión del origen
+   exacto (`Vary: Origin` además en el servicio Go; nunca `*`, y el backend Hapi se niega a arrancar
+   en producción con comodín), scope mínimo por ruta y tres cabeceras de endurecimiento en nginx.
+   `--allow-unauthenticated` es deliberado: es una demo evaluable y CORS no es un control de acceso,
+   solo una regla del navegador.
 
-**Priorización declarada.** Primero la correctitud silenciosa (trampas que producen resultados
-incorrectos sin lanzar error: grafo dirigido, orden de campos, `'Default'` vs `''`, bases aisladas),
-después la experiencia que permite evaluar los retos en un minuto, y al final la narrativa de
-infraestructura. Preferí terminar tres retos verificables antes que cuatro a medias.
+## Sobre el despliegue
 
-## Despliegue en GCP
+El despliegue está **preparado y validado en local, no ejecutado** contra GCP, porque no cuento con
+un proyecto activo en este momento. Entrego el script `deploy-gcp.sh` por subcomandos
+(`preflight`, `ensure-ar`, `ensure-secrets`, `bootstrap-db`, `build`, `deploy`, `urls`, `update-cors`)
+y el `cloudbuild-frontend.yaml` que inyecta las URLs del frontend en tiempo de build. El orden exacto
+y las variables requeridas están en la sección 8 del README.
 
-El despliegue está **preparado y validado en local, no ejecutado** contra GCP. La arquitectura es
-**Cloud Run × 3** (frontend nginx, endorsements Node/Hapi, routes Go distroless) + **Neon Postgres**
-externo, con dos endpoints: *pooled* para Cloud Run y *directo* para el bootstrap del esquema.
-
-| Variable | Para qué |
-|---|---|
-| `DB_HOST_POOLED` / `DB_HOST_DIRECT` | Conexión Neon (runtime / bootstrap) |
-| `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Credenciales (la contraseña solo por entorno) |
-| `JWT_SECRET` | Firma HS256 (≥16), vía Secret Manager |
-| `ENABLE_DEMO_TOKEN` + `DEMO_TOKEN_TTL_*` | Token de demo para el jurado (`true`, TTL 900 s) |
-| `CORS_ORIGINS` | Lista blanca de orígenes (la fija `update-cors`; nunca `*`) |
-| `PROJECT_ID`, `REGION`, `AR_REPO` | Proyecto, región y Artifact Registry |
-
-Orden: `./deploy-gcp.sh preflight && ./deploy-gcp.sh ensure-ar && ./deploy-gcp.sh ensure-secrets`;
-luego `bootstrap-db` (una sola vez, con `DB_SYNCHRONIZE=true`); después `build`, `deploy` y `urls`;
-y al final `update-cors`, que inyecta en ambos backends la URL real del frontend (antes de existir esa
-URL los servicios corren con lista vacía, que es el estado seguro). El build del frontend pasa las
-URLs absolutas como `--build-arg` (son build-time) mediante `cloudbuild-frontend.yaml`.
-
-**Seguridad del despliegue público.** CORS por lista blanca con reflexión del origen exacto y
-`Vary: Origin` (nunca `*`; `buildServer` falla si en producción se intenta), preflight `OPTIONS` 204
-solo para orígenes permitidos y headers `authorization`, `content-type`, `x-api-version`. El token de
-demo queda acotado: el emisor rechaza cualquier scope distinto de `endorse:translate` / `routes:optimal`
-(400) y cada ruta exige el suyo (403), con vida de 15 minutos. En nginx solo se añadieron tres headers
-(`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`): no hay WAF ni rate limiting porque el
-alcance del reto no lo pide. `--allow-unauthenticated` es deliberado: es una demo pública evaluable, la
-autorización real vive en el JWT de la aplicación y CORS no es un control de acceso, solo una regla de
-navegador.
-
-Tres notas honestas: (1) con Neon en `us-east-1` y Cloud Run en `us-central1`, cada ida y vuelta
-añade ~15–30 ms, mitigado con el endpoint *pooled*; (2) no hay framework de migraciones: el esquema
-se crea con `synchronize=true` una vez y luego el servicio corre con `false`; (3) Cloud Run escala a
-cero, así que la primera petición tras un periodo de inactividad tarda unos segundos (cold start).
+El único paso que no puede automatizarse de antemano es `update-cors`: la URL del frontend no existe
+hasta que el frontend está desplegado, y los backends necesitan conocerla. Mientras tanto corren con
+lista vacía, que es el estado seguro (rechaza todos los orígenes).
 
 ## Transparencia sobre el estado
 
-- Verificado ejecutando comandos: **24/24 tests** de endosos, `typecheck` y `build` limpios;
-  `go build`, `go vet` y `go test ./...` verdes; build del frontend verde; `docker compose config`
-  válido y `docker compose up --build` con 4 servicios healthy + seed + smoke end-to-end por nginx.
-- **CORS verificado con control negativo**: preflight desde el origen permitido devuelve 204 con el
-  origen exacto en `Access-Control-Allow-Origin`; desde `http://evil.example.com` no se emite ese
-  header. Cubierto también por tests unitarios en ambos backends.
-- **Despliegue GCP**: `deploy-gcp.sh` y `cloudbuild-frontend.yaml` están creados y validados con
-  dry checks locales (`bash -n`, `shellcheck`, fallo limpio, parseo YAML); **no se han ejecutado**
-  contra GCP. La guía y el orden de comandos están en el README (sección 8).
-- Los diagramas del Reto 3 se entregan en tres formatos: `.drawio` editable, `.png` ya exportado
-  (2× y fondo blanco) y Mermaid legible en GitHub. Están redactados en español, conservando en
-  inglés solo los términos reservados (`Idempotency-Key`, `202 Accepted`, `PENDING`, `Pub/Sub`, etc.).
-- Pendientes declarados: tests de frontend y migraciones formales en lugar de `DB_SYNCHRONIZE`.
+- **Verificado ejecutando comandos:** 25/25 tests del servicio de endosos, 20 tests (40 casos) del
+  servicio de rutas, `typecheck` y `build` limpios en frontend y backend, `docker compose config`
+  válido y `docker compose up -d --build` levantando 4 servicios *healthy* más el seed y un flujo
+  end-to-end a través de nginx.
+- **CORS con control negativo:** el preflight desde el origen permitido devuelve `204` con el
+  origen exacto en `Access-Control-Allow-Origin`; desde `http://evil.example.com` no se emite esa
+  cabecera. También está cubierto por tests unitarios en ambos backends.
+- **Despliegue en GCP:** artefactos creados y validados con dry checks locales (`bash -n`,
+  `shellcheck`, parseo del YAML); no ejecutados contra la nube. Las URLs del correo y del README
+  son placeholders, no valores inventados.
+- **Pendientes declarados:** tests automatizados del frontend, un framework de migraciones en lugar
+  de `DB_SYNCHRONIZE`, e integración con el IdP real (OIDC/JWKS) en lugar del token de demo.
 
-El README del repositorio incluye la **priorización declarada**, las **decisiones y trade-offs**
-por reto, la tabla de trampas con su test asociado, los ejemplos `cURL` y la estructura del repo.
+El README incluye además la priorización declarada, los criterios que descarté y por qué
+(Nx/Turborepo, Cloud SQL frente a Neon, Kafka/Kubernetes), la tabla de trampas con su test asociado
+y los ejemplos `cURL` que realmente ejecuté.
 
 Quedo atento a cualquier aclaración o a una demo guiada.
 

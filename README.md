@@ -4,12 +4,52 @@ Monorepo con los cuatro entregables: **traductor de endosos data-driven** (Node 
 Los tres artefactos ejecutables levantan con `docker compose up --build`; el cuarto es un documento técnico con diagramas editables.
 Todas las cifras de verificación de este README provienen de comandos ejecutados sobre este repositorio, no de estimaciones.
 
+## Resumen ejecutivo
+
+**Qué pedía el reto.** Tres problemas de ingeniería y una decisión de arquitectura: (1) traducir un JSON plano
+al contrato de un core, sin hardcodear el mapeo; (2) calcular la ruta óptima de una grúa sobre un grafo con
+seis trampas que producen resultados **incorrectos sin lanzar error**; (3) analizar por qué un flujo de préstamos
+duplica el dinero al reintentar; (4) todo ello con un frontend que permita verificarlo en un minuto.
+
+**Qué se entrega.**
+
 | Reto | Entregable | Código | Verificación real |
 |---|---|---|---|
-| 1 | Traductor de endosos `POST /v1/endorse/translate` con plantillas **en BD** | [`backend-endorsements-hapi/`](backend-endorsements-hapi) | `npm run typecheck` + **20/20 tests** verdes |
-| 2 | Rutas óptimas de grúa (Dijkstra, grafo **no dirigido**) | [`backend-routes-golang/`](backend-routes-golang) | `go build ./...`, `go vet ./...`, `go test ./...` verdes |
+| 1 | Traductor de endosos `POST /v1/endorse/translate` con plantillas **en BD** | [`backend-endorsements-hapi/`](backend-endorsements-hapi) | `tsc --noEmit` limpio + **25/25 tests** verdes |
+| 2 | Rutas óptimas de grúa (Dijkstra, grafo **no dirigido**) | [`backend-routes-golang/`](backend-routes-golang) | `go build`, `go vet`, `go test` verdes (20 tests, 40 casos) |
 | 3 | Arquitectura de préstamos: idempotencia, saga, reconciliación | [`architecture-drawio/architecture.md`](architecture-drawio/architecture.md) | Documento + diagramas `.drawio` + Mermaid |
 | 4 | Frontend unificado (dos pestañas, TS estricto) | [`frontend-monolith/`](frontend-monolith) | `tsc --noEmit && vite build` verde |
+| — | Despliegue reproducible en Cloud Run + Neon (**no ejecutado**) | [`deploy-gcp.sh`](deploy-gcp.sh) | `bash -n`, `shellcheck`, `docker compose config -q` |
+
+**Probarlo en 5 minutos** (requiere Docker; no necesita cuenta de nube ni base de datos externa):
+
+```bash
+docker compose up --build      # 4 servicios en healthy; el contenedor `seed` termina solo
+# luego abrir http://localhost:8080 — dos pestañas, el token demo se pide solo
+```
+
+Y sin navegador, el mismo flujo en tres comandos (salida real en [§12](#12-verificación-ejecutada)):
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8082/v1/auth/token -H 'Content-Type: application/json' -d '{}' \
+  | sed -E 's/.*"token":"([^"]+)".*/\1/')
+
+curl -s -X POST localhost:8082/v1/endorse/translate \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"policyNumber":"08200000049","idEnvio":5984,"frecuencia":"Semestral",
+       "tipoEndoso":"CambioFrecuencia","producto":"Rumbo","plan":"PlanRumbo",
+       "moneda":"Nuevo Sol","usuario":"interface.servicios",
+       "fechaSolicitud":"2025-08-27","fechaCliente":"2025-08-27","fechaEfectiva":"2025-09-01"}'
+
+curl -s -X POST localhost:8081/v1/routes/optimal \
+  -H "Authorization: Bearer $(curl -s -X POST localhost:8081/v1/auth/token \
+       -H 'Content-Type: application/json' -d '{}' | sed -E 's/.*"token":"([^"]+)".*/\1/')" \
+  -H 'Content-Type: application/json' \
+  -d '{"accidentLocation":"San Isidro","depots":["Miraflores","Ate"],
+       "graph":{"Miraflores":{"San Isidro":7,"Barranco":3},"San Isidro":{"Miraflores":7,"Lince":4},
+                "Barranco":{"Miraflores":3,"Surco":5},"Lince":{"San Isidro":4,"Surco":6},
+                "Surco":{"Barranco":5,"Lince":6,"Ate":10},"Ate":{"Surco":10}}}'
+```
 
 ---
 
@@ -19,7 +59,7 @@ El orden no fue casual: primero lo que **se puede romper en silencio**, después
 
 | Orden | Qué prioricé | Por qué | Estado |
 |---|---|---|---|
-| 1 | **Correctitud del Reto 1** (plantillas en BD, orden, `'Default'` vs `''`, errores tipados) | Es donde un atajo se ve bien en la demo y falla en producción: un `if (producto === 'Rumbo')` habría pasado la demo, no la revisión | Completo + 20 tests |
+| 1 | **Correctitud del Reto 1** (plantillas en BD, orden, `'Default'` vs `''`, errores tipados) | Es donde un atajo se ve bien en la demo y falla en producción: un `if (producto === 'Rumbo')` habría pasado la demo, no la revisión | Completo + 25 tests |
 | 2 | **Correctitud del Reto 2** (grafo no dirigido, empates, bases aisladas, nodo inexistente, pesos negativos) | Cinco de las seis trampas producen **resultados incorrectos sin error**: el peor tipo de bug | Completo + tabla de tests |
 | 3 | **Frontend que demuestra los dos backends** (textarea → traducir; selector + checklist → calcular) | Sin esto los retos no son verificables por un tercero en 60 segundos | Completo + `build` verde |
 | 4 | **Profundidad del Reto 3** (contrato de idempotencia, saga, máquina de estados, costo) | Es un problema de arquitectura, no de código: la decisión se defiende con el documento | Completo |
@@ -63,8 +103,9 @@ No hay URLs absolutas ni CORS en el navegador en local.
 El orden de arranque lo garantizan healthchecks reales, no `sleep`:
 `db` → `endorsements` (TypeORM crea las tablas) → `seed` (inserta plantillas) y `frontend`.
 
-> Estado de esta verificación: `docker compose config -q` se ejecutó y validó la sintaxis del compose.
-> `docker compose up --build` **no** se ejecutó en este entorno; no se afirma lo contrario.
+> Estado de esta verificación: `docker compose up -d --build` **sí** se ejecutó sobre este repositorio.
+> Resultado: `db`, `endorsements`, `routes` y `frontend` en *healthy* y `seed` en `Exited (0)`; los curls
+> de este README se lanzaron contra ese stack (ver [§12](#12-verificación-ejecutada)).
 
 ## 2. Ejecución local (sin Docker)
 
@@ -180,6 +221,16 @@ curl -s -X POST localhost:8082/v1/endorse/translate \
        "fechaSolicitud":"2025-08-27","fechaCliente":"2025-08-27",
        "fechaEfectiva":"2025-09-01"}'
 ```
+
+### Trampas del Reto 1 y su tratamiento
+
+| Trampa | Qué pasaría con el atajo | Cómo se resolvió |
+|---|---|---|
+| **Mapeo hardcodeado por producto** | `if (producto === 'Rumbo')` pasa la demo y convierte cada producto nuevo en un deploy | Plantillas en BD (`templates` / `template_fields` / `template_events`); `AUTO`/`CambioFrecuencia` se añade con un `INSERT` |
+| **Orden de propiedades del JSON** | El core compara por posición; reordenar el objeto rompe la integración sin error visible | El orden viene de `position` en `template_fields`; un test fija la secuencia exacta de `dynamicData` |
+| **`'Default'` vs `''`** | Un `value || 'Default'` colapsa dos significados de negocio distintos | `DEFAULT` usa `default_value` y se emite tal cual; test dedicado a que la cadena vacía siga vacía |
+| **Fechas imposibles (`2025-02-31`)** | `new Date()` "corrige" a marzo y envía basura al core | Joi valida el calendario real y el formato `YYYY-MM-DD` (`400 VALIDATION_ERROR`) |
+| **Campo `INPUT` ausente** | El core recibe `undefined` y falla lejos del origen | `MISSING_FIELD_VALUE` (422) con `source_key`, antes de llamar a nadie |
 
 ### Arquitectura por capas
 
@@ -334,13 +385,32 @@ y el navegador hace CORS directo contra cada backend** — por eso ambos backend
 - El checklist de bases del frontend usa el grafo fijo de Lima del enunciado; cambiarlo es un cambio de
   constante (el backend no conoce la red).
 
+**Criterios descartados (y por qué)**
+
+- **Nx / Turborepo para el monorepo.** Con dos backends en runtimes distintos y un frontend, `npm`, `go` y
+  `docker compose` ya dan build y caché suficiente. Nx habría añadido configuración, plugins y una curva
+  que el evaluador tendría que aprender antes de leer el código: coste alto, beneficio cero a esta escala.
+- **Cloud SQL en lugar de Neon.** Cloud SQL exige instancia encendida (facturación por tiempo), VPC
+  connector o proxy, y no resuelve nada que Neon no dé: *pooled* para Cloud Run, *directo* para el
+  bootstrap y base fuera del ciclo de vida del deploy. Si el requisito fuera latencia mínima dentro de
+  GCP, la decisión se invertiría; está anotado como trade-off (misma región en Neon lo mitiga).
+- **Token de demo estático o compartido.** Un `API_KEY` fijo embebido en el frontend es un secreto público
+  que no caduca ni se acota. Se prefirió un JWT HS256 firmado por el backend, con `scope` limitado
+  (`endorse:translate` / `routes:optimal`) y una hora de vida. Apagar el emisor
+  (`ENABLE_DEMO_TOKEN=false`) habría dejado al jurado sin forma de probar el flujo.
+- **Kafka + Kubernetes para el Reto 3.** ≈600 préstamos/día no justifican un clúster: Pub/Sub + outbox
+  cubren entrega al menos una vez y orden, con una fracción del costo operativo.
+- **Mocks de base de datos en los tests de contrato.** Se prefirió un repositorio en memoria (Hapi) y
+  funciones puras (Go): mismo aislamiento, sin el acoplamiento a SQL que los mocks introducen.
+
 ---
 
 ## 8. Despliegue en GCP (Cloud Run + Neon) — borrador validado en local
 
-> **Estado:** artefactos creados y validados con dry checks locales; **no ejecutados contra GCP**.
-> La Fase 4 (CORS/seguridad) y la Fase 5 (documentación) todavía pueden ajustar variables y
-> orígenes, por eso el script está parametrizado y sin secretos hardcodeados.
+> **Estado:** artefactos creados y validados con dry checks locales (`bash -n`, `shellcheck`, `docker
+> compose config -q`, parseo del YAML); **no ejecutados contra GCP**. No hay ninguna URL real en este
+> repositorio: donde iría una, verás un placeholder (`ep-xxx…`, `<tu-frontend>`). El script está
+> parametrizado y sin secretos.
 
 ### 8.1 Arquitectura
 
@@ -382,7 +452,7 @@ Cloud Run: frontend (nginx + SPA React, puerto 8080)
 | `JWT_SECRET` | sí | Firma HS256 (≥16) | **Nunca en el repo**; Secret Manager (`jwt-secret`) |
 | `SECRET_JWT`, `SECRET_DB_PASSWORD` | no | Nombres de secretos | `jwt-secret`, `db-password` |
 | `ENABLE_DEMO_TOKEN` | no | Emisor de token demo | `true`: el jurado necesita autenticarse |
-| `DEMO_TOKEN_TTL_SECONDS` / `_MINUTES` | no | Vida del token demo | `900` s (~15 min) por defecto |
+| `DEMO_TOKEN_TTL_SECONDS` / `_MINUTES` | no | Vida del token demo | `3600` s (1 hora) por defecto |
 | `CORS_ORIGINS` | no | Lista de orígenes separada por comas | Vacía hasta `update-cors`; **nunca `*`** en Cloud Run |
 | `MAX_INSTANCES` | no | Tope de réplicas | `3`, para no agotar conexiones de Neon |
 
@@ -463,7 +533,8 @@ llamada sale hacia `https://endorsements-...run.app`, no hacia `/endorse-api`.
 - **Token demo acotado.** `POST /v1/auth/token` sigue activo (`ENABLE_DEMO_TOKEN=true`) para que el
   evaluador pruebe el flujo, pero el `scope` está limitado a `endorse:translate` (Hapi) y
   `routes:optimal` (Go); pedir otro scope devuelve `400` y un token con scope ajeno recibe `403`.
-  La vida es corta: 900 s / 15 min en el despliegue. No hay endpoints administrativos que el token
+  La vida es de 3600 s (1 hora) en todos los entornos: una sesión de evaluación completa sin re-emitir
+  el token, y el riesgo lo acota el scope, no el reloj. No hay endpoints administrativos que el token
   demo pueda alcanzar.
 - **`--allow-unauthenticated` es intencional.** IAM bloquearía al jurado; la seguridad real está en
   el JWT de la aplicación y en CORS, no en la autenticación de la plataforma. Para un entorno
@@ -509,12 +580,12 @@ llamada sale hacia `https://endorsements-...run.app`, no hacia `/endorse-api`.
 4. **routes**: *Web Service* → Docker, root `backend-routes-golang`, puerto 8081,
    variables `JWT_SECRET` (el mismo) y `ENABLE_DEMO_TOKEN=true`.
 5. **frontend**: *Web Service* → Docker, root `frontend-monolith`. Los `VITE_*` son **build-time**:
-   se pasan como *build args* (el [`Dockerfile`](frontend-monolith/Dockerfile:13) ya los declara
+   se pasan como *build args* (el [`Dockerfile`](frontend-monolith/Dockerfile) ya los declara
    como `ARG` + `ENV`) apuntando a las URLs públicas de los dos backends.
    > Si se cambia una URL hay que **reconstruir** la imagen; reiniciar el servicio no basta.
    >
    > **Trampa si se omiten**: en Docker Compose los valores por defecto (`/endorse-api`, `/routes-api`)
-   > funcionan porque [`nginx.conf.template`](frontend-monolith/nginx.conf.template:1) hace proxy a los nombres de
+   > funcionan porque [`nginx.conf.template`](frontend-monolith/nginx.conf.template) hace proxy a los nombres de
    > servicio `endorsements:8082` y `routes:8081`. En Render esos DNS **no existen**, así que una
    > imagen construida sin las URLs absolutas sirve la SPA pero devuelve `502` en cada llamada.
    > Verificación rápida tras el primer deploy: pulsar *Traducir* y comprobar en la pestaña *Network*
@@ -545,7 +616,7 @@ No hay usuarios ni contraseñas reales: la autenticación es un **JWT HS256 de d
 | Emisor Reto 1 | `POST :8082/v1/auth/token` | `scope` admitido: `endorse:translate` (default). Cualquier otro → `400` |
 | Emisor Reto 2 | `POST :8081/v1/auth/token` | `scope` admitido: `routes:optimal` (default; `routes:read` por compatibilidad). Cualquier otro → `400` |
 | Secreto local | `dev-secret-change-me-please` | **Solo local**; ambos backends lo leen de `JWT_SECRET` (≥16 caracteres) |
-| Vigencia | 3600 s en local; **900 s** por default en producción | `JWT_TTL_SECONDS` / `JWT_TTL_MINUTES` |
+| Vigencia | 3600 s (1 hora) en todos los entornos | `JWT_TTL_SECONDS` / `JWT_TTL_MINUTES` |
 | Usuario demo | `demo-client` | `subject` del claim |
 
 El `scope` **sí se aplica**: cada ruta exige el suyo (`/v1/endorse/translate` → `endorse:translate`,
@@ -583,7 +654,15 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
   `python3 architecture-drawio/render_drawio.py`; si se edita el `.drawio` y se prefiere la
   herramienta oficial, `File → Export as → PNG` (escala 200%, borde 10, sin transparencia) da un
   resultado equivalente.
-- **Despliegue cloud**: guía completa, sin ejecutar (sin cuenta/proyecto disponible).
+- **Despliegue cloud**: los artefactos (`deploy-gcp.sh`, `cloudbuild-frontend.yaml`, los tres
+  `.gcloudignore`) están creados y validados con dry checks locales (`bash -n`, `shellcheck`,
+  `docker compose config -q`, parseo del YAML); **no** se ejecutaron contra GCP porque no hay
+  cuenta/proyecto disponible. Todas las URLs del despliegue son placeholders (`ep-xxx…`,
+  `<tu-frontend>`): no hay valores inventados.
+- **Preflight de origen hostil en Hapi**: responde `200 {"message":"CORS error: Origin not allowed"}`
+  en lugar de `204`, porque Hapi resuelve el CORS antes de llegar al `preflightStatusCode` de la ruta.
+  Lo relevante es que **no** emite `Access-Control-Allow-Origin`, que es lo que prueba el control
+  negativo; se documenta tal cual y no se fuerza.
 - Pendiente para producción: OpenTelemetry, rate limiting, paginación de catálogos de plantillas,
   pruebas de carga del cálculo de rutas y auditoría de cambios de plantilla.
 - Los pesos del grafo son números en la unidad que defina el consumidor (km/min); el servicio no impone semántica.
@@ -595,16 +674,23 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 ```
 .
 ├── docker-compose.yml           # orquestación completa con healthchecks
+├── deploy-gcp.sh                # Cloud Run ×3 + Neon + Secret Manager (subcomandos)
+├── cloudbuild-frontend.yaml     # build del frontend con URLs build-time
 ├── backend-endorsements-hapi/   # Reto 1: Hapi + TypeORM + plantillas data-driven
 │   ├── src/{routes,controllers,services,repositories,mappers,models,entities}
+│   ├── src/{config,security,plugins,errors}
 │   ├── src/seed/                # plantillas RUMBO y AUTO (idempotente)
-│   └── tests/                   # 20 tests (mapper, service, HTTP)
+│   ├── tests/                   # 25 tests (mapper, service, HTTP, CORS, scope)
+│   └── Dockerfile · .dockerignore · .gcloudignore · .env.example
 ├── backend-routes-golang/       # Reto 2: Dijkstra puro + HTTP + JWT
 │   ├── internal/{domain,service,httpapi,auth}
 │   ├── cmd/{server,healthcheck}
-│   └── internal/**/*_test.go    # dominio, servicio y contrato HTTP
+│   ├── internal/**/*_test.go    # 20 tests / 40 casos (dominio, servicio, HTTP, CORS, JWT)
+│   └── Dockerfile · .dockerignore · .gcloudignore
 ├── frontend-monolith/           # Reto 4: React + Vite + nginx (dos pestañas)
-│   └── src/{components,api,config.ts,types.ts}
+│   ├── src/{components,api,config.ts,types.ts}
+│   ├── nginx.conf.template      # proxy /api/* + headers de seguridad
+│   └── Dockerfile · .dockerignore · .gcloudignore · .env.example
 ├── architecture-drawio/         # Reto 3
 │   ├── architecture.md          # diagnóstico, TO-BE, decisiones, Mermaid
 │   ├── as-is.drawio             # diagrama editable del flujo actual
@@ -613,7 +699,7 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 │   ├── to-be.png                # export 2× con fondo blanco (3200×3200)
 │   └── render_drawio.py         # .drawio → PNG con Pillow (sin drawio CLI)
 └── docs/
-    └── entrega-talsory.md       # correo de entrega
+    └── entrega-talsory.md       # correo de entrega al reclutador
 ```
 
 ---
@@ -623,11 +709,12 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 | Comando | Resultado |
 |---|---|
 | `cd backend-routes-golang && go build ./... && go vet ./... && go test ./...` | OK — 4 paquetes de test, 20 tests (40 casos con subtests) |
-| `cd backend-endorsements-hapi && npm run typecheck && npm test` | OK — `tsc --noEmit` limpio, **24/24** tests |
+| `cd backend-endorsements-hapi && npm run typecheck && npm test` | OK — `tsc --noEmit` limpio, **25/25** tests |
 | Preflight CORS real (`OPTIONS` con `Origin: http://localhost:8080`) | OK — `204`, `Access-Control-Allow-Origin: http://localhost:8080` (nunca `*`), `Allow-Headers` con `authorization,content-type,x-api-version`, `Max-Age: 600`, `Expose-Headers: x-api-version` |
 | Control negativo CORS (`Origin: http://evil.example.com`) | OK — **sin** `Access-Control-Allow-Origin`; en Hapi `200 {"message":"CORS error: Origin not allowed"}`, en Go `204` sin headers CORS |
-| Token de demo: claims reales decodificados | OK — `scope` acotado (`endorse:translate` / `routes:optimal`) y `exp` a 3600 s en local (900 s en el despliegue) |
+| Token de demo: claims reales decodificados | OK — `scope` acotado (`endorse:translate` / `routes:optimal`) y vida real de `3600` s en todos los entornos |
 | Escalada de scope (`{"scope":"admin:all"}`) y token cruzado entre servicios | OK — `400 VALIDATION_ERROR` al emitir, `403 FORBIDDEN` al consumir en el servicio equivocado |
+| Locale del `403` de scope en Hapi | OK — `403 FORBIDDEN` con mensaje en español (`El token no tiene un scope autorizado para este endpoint`), cubierto por test |
 | `cd frontend-monolith && npm run build` | OK — `tsc --noEmit` + `vite build` (156 kB JS / 8 kB CSS) |
 | `docker compose config -q` | OK — compose válido |
 | `docker compose down -v && docker compose up -d --build` | OK — partiendo de volumen limpio: `db`, `endorsements`, `routes` y `frontend` en *healthy*; `seed` terminó `Exited (0)` |
