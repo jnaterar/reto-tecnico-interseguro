@@ -106,6 +106,46 @@ docker build -t endorsements-translator .
 docker run --rm -p 8082:8082 --env-file .env endorsements-translator
 ```
 
+### Seed y esquema contra una base externa (Neon / Cloud SQL)
+
+En docker-compose el servicio `seed` es un contenedor one-shot que crea el
+esquema con TypeORM y luego inserta las plantillas. **En Cloud Run ese
+contenedor no existe**: hay que ejecutar el seed una vez desde una máquina con
+acceso a la BD, apuntando a Neon (Postgres serverless) con TLS.
+
+```bash
+cd backend-endorsements-hapi
+npm ci
+
+# Valores que entrega Neon. DB_SSL es obligatorio: Neon rechaza conexiones sin TLS.
+export DB_HOST="<host-neon>"          # p. ej. ep-xxx.us-east-1.aws.neon.tech
+export DB_PORT="5432"
+export DB_USER="<usuario>"
+export DB_PASSWORD="<password>"
+export DB_NAME="<base>"
+export DB_SSL="true"
+# Solo para esta ejecución: crea las tablas si no existen.
+export DB_SYNCHRONIZE="true"
+export JWT_SECRET="<secreto-de-16-o-mas-caracteres>"
+
+npm run seed
+```
+
+Qué hace exactamente:
+
+1. `createDataSource()` inicializa TypeORM con `DB_SYNCHRONIZE=true`, por lo que
+   crea `products`, `endorsement_types`, `templates`, `template_fields` y
+   `template_events` si faltan.
+2. El seed inserta `RUMBO/CAMBIO_FRECUENCIA` y `AUTO/CAMBIO_FRECUENCIA` de forma
+   idempotente (se puede repetir sin duplicar).
+3. El servicio desplegado en Cloud Run debe usar **`DB_SYNCHRONIZE=false`**:
+   solo lee plantillas; no debe alterar el esquema en cada arranque.
+
+> Honestidad sobre migraciones: el repo no incluye un framework de migraciones.
+> El bootstrap de esquema se hace con `synchronize=true` una sola vez (arriba).
+> Para evolución de esquema en producción se deberían versionar migraciones
+> TypeORM y cambiar el comando de bootstrap; está declarado como pendiente.
+
 ### Scripts
 
 | Script | Descripción |
