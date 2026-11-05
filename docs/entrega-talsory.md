@@ -54,7 +54,7 @@ backend y que el frontend obtiene de forma transparente.
 |---|---|
 | Emisor Reto 1 | `POST /v1/auth/token` en el servicio de endosos (cuerpo `{}`) |
 | Emisor Reto 2 | `POST /v1/auth/token` en el servicio de rutas (cuerpo `{}`) |
-| Secreto local | `dev-secret-change-me-please` (`JWT_SECRET`, solo local; en la nube va por Secret Manager) |
+| Secreto local | `dev-secret-change-me-please` (`JWT_SECRET`, solo local; en la nube lo inyecta `deploy-gcp.sh` como variable de entorno del servicio) |
 | Vigencia | 3600 s (1 hora) en todos los entornos |
 | Alcance | `endorse:translate` (endosos) y `routes:optimal` (rutas); cualquier otro scope se rechaza con `400` al emitir y con `403` al consumir |
 
@@ -91,10 +91,16 @@ corporativo se apaga con `ENABLE_DEMO_TOKEN=false` y los tokens los emite el IdP
 ## Sobre el despliegue
 
 El despliegue está **preparado y validado en local, no ejecutado** contra GCP, porque no cuento con
-un proyecto activo en este momento. Entrego el script `deploy-gcp.sh` por subcomandos
-(`preflight`, `ensure-ar`, `ensure-secrets`, `bootstrap-db`, `build`, `deploy`, `urls`, `update-cors`)
-y el `cloudbuild-frontend.yaml` que inyecta las URLs del frontend en tiempo de build. El orden exacto
-y las variables requeridas están en la sección 8 del README.
+un proyecto activo en este momento. Entrego el script `deploy-gcp.sh` como versión definitiva, por
+subcomandos y en este orden: `preflight`, `ensure-ar`, `bootstrap-db`, `build`, `deploy`, `urls` y
+`update-cors` (`./deploy-gcp.sh all` los encadena). Se acompaña del `cloudbuild-frontend.yaml` que
+inyecta las URLs del frontend en tiempo de build. El procedimiento exacto, con las variables que hay
+que exportar antes de ejecutarlo, está en la sección 8 del README.
+
+Las credenciales (`JWT_SECRET`, `DB_PASSWORD`) no viven en el repositorio ni en ficheros versionados:
+se exportan en la terminal del operador y el script las inyecta en Cloud Run como variables de
+entorno. Es una decisión consciente para una demo pública: simplifica el despliegue, con el trade-off
+de que quien pueda leer la configuración del servicio verá esos valores; se rotan al terminar.
 
 El único paso que no puede automatizarse de antemano es `update-cors`: la URL del frontend no existe
 hasta que el frontend está desplegado, y los backends necesitan conocerla. Mientras tanto corren con

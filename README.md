@@ -405,12 +405,13 @@ y el navegador hace CORS directo contra cada backend** — por eso ambos backend
 
 ---
 
-## 8. Despliegue en GCP (Cloud Run + Neon) — borrador validado en local
+## 8. Despliegue en GCP (Cloud Run + Neon) — script definitivo
 
-> **Estado:** artefactos creados y validados con dry checks locales (`bash -n`, `shellcheck`, `docker
-> compose config -q`, parseo del YAML); **no ejecutados contra GCP**. No hay ninguna URL real en este
-> repositorio: donde iría una, verás un placeholder (`ep-xxx…`, `<tu-frontend>`). El script está
-> parametrizado y sin secretos.
+> **Estado:** `deploy-gcp.sh` y `cloudbuild-frontend.yaml` están **cerrados** y validados con dry
+> checks locales (`bash -n`, `shellcheck`, `docker compose config -q`, parseo del YAML). **No se ha
+> ejecutado nada contra GCP todavía**: la primera ejecución es el despliegue real. El repositorio no
+> contiene URLs reales ni credenciales; valores como `ep-xxx…` o `<usuario>` son lo que se exporta en
+> la terminal del operador, nunca ficheros versionados.
 
 ### 8.1 Arquitectura
 
@@ -448,9 +449,8 @@ Cloud Run: frontend (nginx + SPA React, puerto 8080)
 | `DB_PORT` | no | Puerto Postgres | `5432` |
 | `DB_NAME` | sí | Base de datos | — |
 | `DB_USER` | sí | Usuario de Neon | — |
-| `DB_PASSWORD` | sí | Contraseña | **Nunca en el repo**; va a Secret Manager (`db-password`) |
-| `JWT_SECRET` | sí | Firma HS256 (≥16) | **Nunca en el repo**; Secret Manager (`jwt-secret`) |
-| `SECRET_JWT`, `SECRET_DB_PASSWORD` | no | Nombres de secretos | `jwt-secret`, `db-password` |
+| `DB_PASSWORD` | sí | Contraseña de Neon | **Nunca en el repo**; se lee del entorno del operador y se inyecta al servicio como variable de entorno |
+| `JWT_SECRET` | sí | Firma HS256 (≥16) | **Nunca en el repo**; se lee del entorno del operador y se inyecta al servicio como variable de entorno |
 | `ENABLE_DEMO_TOKEN` | no | Emisor de token demo | `true`: el jurado necesita autenticarse |
 | `DEMO_TOKEN_TTL_SECONDS` / `_MINUTES` | no | Vida del token demo | `3600` s (1 hora) por defecto |
 | `CORS_ORIGINS` | no | Lista de orígenes separada por comas | Vacía hasta `update-cors`; **nunca `*`** en Cloud Run |
@@ -458,6 +458,11 @@ Cloud Run: frontend (nginx + SPA React, puerto 8080)
 
 `PORT`, `NODE_ENV`, `DB_SSL` y `DB_SYNCHRONIZE` no se pasan a mano: Cloud Run inyecta `PORT`; la
 imagen fija `NODE_ENV=production`; el script envía `DB_SSL=true` y `DB_SYNCHRONIZE=false` al servicio.
+
+`JWT_SECRET` y `DB_PASSWORD` viajan en `--set-env-vars`, no por Secret Manager. El script elige un
+delimitador (`^X^`) que no aparezca en ningún valor, de modo que una contraseña con comas o puntos y
+coma no rompa el despliegue; si no encuentra uno, aborta con un mensaje claro. El trade-off de esta
+decisión está en §8.6.
 
 ### 8.3 Orden de ejecución
 
@@ -477,26 +482,24 @@ export JWT_SECRET="$(openssl rand -hex 32)"
 Paso a paso (equivalente y depurable):
 
 ```bash
-./deploy-gcp.sh preflight       # billing + 5 APIs
+./deploy-gcp.sh preflight       # billing + 4 APIs (run, artifactregistry, secretmanager, cloudbuild)
 ./deploy-gcp.sh ensure-ar       # Artifact Registry
-./deploy-gcp.sh ensure-secrets  # jwt-secret / db-password en Secret Manager
-./deploy-gcp.sh bootstrap-db    # esquema + seed contra Neon (endpoint directo)
+./deploy-gcp.sh bootstrap-db    # esquema + seed contra Neon (directo, DB_SYNCHRONIZE=true)
 ./deploy-gcp.sh build           # imágenes de endorsements y routes
-./deploy-gcp.sh deploy          # backends + frontend (captura URLs)
-./deploy-gcp.sh update-cors     # fija CORS_ORIGINS a la URL del frontend
+./deploy-gcp.sh deploy          # backends (pooled, DB_SYNCHRONIZE=false) + frontend
 ./deploy-gcp.sh urls            # imprime las URLs públicas
+./deploy-gcp.sh update-cors     # fija CORS_ORIGINS a la URL del frontend (depende de `urls`)
 ```
 
 ### 8.4 Qué hace cada subcomando
 
 | Subcomando | Acción |
 |---|---|
-| `preflight` | Verifica billing y habilita `run`, `artifactregistry`, `secretmanager`, `sqladmin`, `cloudbuild` |
+| `preflight` | Verifica billing y habilita `run`, `artifactregistry`, `secretmanager`, `cloudbuild` |
 | `ensure-ar` | Crea `interseguro-reto` si no existe y configura `docker` |
-| `ensure-secrets` | Crea/actualiza `jwt-secret` y `db-password` desde el entorno |
-| `bootstrap-db` | `npm ci` + `npm run seed` con `DB_SYNCHRONIZE=true`, **una sola vez** |
+| `bootstrap-db` | `npm ci` + `npm run seed` contra el endpoint **directo**, con `DB_SYNCHRONIZE=true`, **una sola vez** |
 | `build` | `gcloud builds submit` de endorsements y routes (`.gcloudignore` evita subir `node_modules`/`dist`) |
-| `deploy` | Cloud Run de backends (secretos) y frontend (build-args Vite vía `cloudbuild-frontend.yaml`) |
+| `deploy` | Cloud Run de backends (env vars, secretos incluidos, por `--set-env-vars`) y frontend (build-args Vite vía `cloudbuild-frontend.yaml`) |
 | `update-cors` | Fija `CORS_ORIGINS` de ambos backends a la URL exacta del frontend |
 | `urls`, `logs [svc]` | Inspección de URLs y logs |
 
@@ -539,20 +542,28 @@ llamada sale hacia `https://endorsements-...run.app`, no hacia `/endorse-api`.
 - **`--allow-unauthenticated` es intencional.** IAM bloquearía al jurado; la seguridad real está en
   el JWT de la aplicación y en CORS, no en la autenticación de la plataforma. Para un entorno
   corporativo se añadiría IAP o un API Gateway delante.
+- **Secretos como variables de entorno, no Secret Manager.** `JWT_SECRET` y `DB_PASSWORD` se inyectan
+  con `--set-env-vars` desde el entorno del operador. Es una decisión consciente para esta demo:
+  elimina dos recursos y el enlace `secretAccessor` por servicio. Trade-off explícito: quien pueda leer
+  la configuración del servicio (`run.services.get`) verá ambos valores; se aceptan porque la demo es
+  pública y evaluable, se rotan al terminar y no dan acceso a nada más que a esta base y a estos
+  tokens. Migrar es cambiar `--set-env-vars` por `--set-secrets` y publicar las versiones; el resto del
+  script no cambia (por eso `secretmanager.googleapis.com` sigue habilitada).
 - **nginx** añade solo `X-Content-Type-Options`, `X-Frame-Options` y `Referrer-Policy`; no hay CSP,
   WAF ni rate limiting (fuera de alcance).
 
-### 8.7 Notas honestas y pendientes
+### 8.7 Notas honestas y límites conocidos
 
 - **Latencia Neon ↔ Cloud Run**: con Neon en `us-east-1` y Cloud Run en `us-central1`, cada
   *round-trip* añade ~15–30 ms. Se mitiga usando el endpoint **pooled** en runtime y reservando el
   **directo** para el bootstrap.
 - **Sin framework de migraciones**: el esquema se crea con `DB_SYNCHRONIZE=true` una sola vez y
-  después el servicio corre con `DB_SYNCHRONIZE=false`. Versionar migraciones TypeORM sigue pendiente.
-- **`sqladmin.googleapis.com`** se habilita por requisito de la consigna, pero Neon **no** usa Cloud
-  SQL; puede retirarse al cerrar el script.
-- **No ejecutado**: ningún comando de este script se ha lanzado contra GCP en este entorno. La
-  evidencia local es `bash -n`, `shellcheck`, fallo limpio, parseo del YAML y `docker compose`.
+  después el servicio corre con `DB_SYNCHRONIZE=false`. Versionar migraciones TypeORM queda fuera del
+  alcance de esta entrega y es el primer trabajo a añadir si el proyecto sigue.
+- **Primera ejecución pendiente por diseño**: el script está cerrado y validado en seco, pero ningún
+  comando se ha lanzado contra GCP en este entorno. La evidencia local es `bash -n`, `shellcheck`,
+  `docker compose config -q`, el fallo limpio de `preflight` sin credenciales y el parseo del YAML.
+  El orden exacto para ejecutarlo está en §8.3.
 
 ### 8.8 Alternativa sin GCP (Render / Railway)
 
@@ -674,7 +685,7 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 ```
 .
 ├── docker-compose.yml           # orquestación completa con healthchecks
-├── deploy-gcp.sh                # Cloud Run ×3 + Neon + Secret Manager (subcomandos)
+├── deploy-gcp.sh                # Cloud Run ×3 + Neon: despliegue por subcomandos
 ├── cloudbuild-frontend.yaml     # build del frontend con URLs build-time
 ├── backend-endorsements-hapi/   # Reto 1: Hapi + TypeORM + plantillas data-driven
 │   ├── src/{routes,controllers,services,repositories,mappers,models,entities}
