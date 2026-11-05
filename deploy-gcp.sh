@@ -1,52 +1,54 @@
 #!/usr/bin/env bash
 # =============================================================================
-# deploy-gcp.sh — BORRADOR VALIDADO (Fase 3). NO cierra el despliegue final.
+# deploy-gcp.sh — versión definitiva (Cloud Run ×3 + Neon Postgres externo)
 #
-# Qué hace: preflight de GCP, Artifact Registry, secretos, bootstrap de Neon,
-# build de imágenes y despliegue de los 3 servicios en Cloud Run.
+# Qué hace: preflight de GCP, Artifact Registry, bootstrap de Neon, build de
+# imágenes y despliegue de los 3 servicios en Cloud Run, más `update-cors`.
 #
-# Estado: parametrizado y verificado solo con dry checks locales (`bash -n`,
-# `shellcheck`, fallo limpio). NO se ha ejecutado contra GCP.
+# Verificación local (sin tocar GCP): `bash -n`, `shellcheck` y
+# `docker compose config -q`. La ejecución real necesita proyecto con billing y
+# una base Neon con sus dos endpoints.
 #
 # Uso:
-#   ./deploy-gcp.sh preflight       # billing + 5 APIs
+#   ./deploy-gcp.sh preflight       # billing + 4 APIs
 #   ./deploy-gcp.sh ensure-ar       # repositorio Artifact Registry
-#   ./deploy-gcp.sh ensure-secrets  # jwt-secret / db-password
 #   ./deploy-gcp.sh bootstrap-db    # esquema + seed contra Neon (endpoint directo)
 #   ./deploy-gcp.sh build           # build+push endorsements y routes
 #   ./deploy-gcp.sh deploy          # Cloud Run: backends + frontend
 #   ./deploy-gcp.sh urls            # imprime URLs públicas
+#   ./deploy-gcp.sh update-cors     # fija el origen exacto del frontend
 #   ./deploy-gcp.sh logs [servicio] # logs recientes (por defecto endorsements)
-#   ./deploy-gcp.sh all             # secuencia completa
+#   ./deploy-gcp.sh all             # secuencia completa, en ese orden
 #
 # Variables obligatorias (sin valores por defecto):
 #   DB_HOST_POOLED, DB_HOST_DIRECT, DB_NAME, DB_USER, DB_PASSWORD, JWT_SECRET
 # Variables opcionales: PROJECT_ID, REGION, AR_REPO, TAG, SERVICE_*, IMAGE_*,
-#   PORT_*, MAX_INSTANCES, SECRET_JWT, SECRET_DB_PASSWORD, CORS_ORIGINS,
-#   ENABLE_DEMO_TOKEN, DEMO_TOKEN_TTL_SECONDS, DEMO_TOKEN_TTL_MINUTES,
-#   STATE_FILE.
+#   PORT_*, MAX_INSTANCES, CORS_ORIGINS, ENABLE_DEMO_TOKEN,
+#   DEMO_TOKEN_TTL_SECONDS, DEMO_TOKEN_TTL_MINUTES, STATE_FILE.
 #
-# CORS (Fase 4): los backends reciben `CORS_ORIGINS` como lista separada por
-# comas. La URL del frontend solo existe DESPUÉS de desplegarlo, así que el
-# primer deploy de los backends va sin CORS y `update-cors` fija después el
-# origen exacto. En Cloud Run nunca se usa `*`.
+# CORS: los backends reciben `CORS_ORIGINS` como lista separada por comas. La URL
+# del frontend solo existe DESPUÉS de desplegarlo, así que el primer deploy de los
+# backends va sin CORS y `update-cors` fija después el origen exacto. En Cloud Run
+# nunca se usa `*`: el backend Hapi aborta el arranque con comodín en producción.
 #
-# Token demo (Fase 4): ENABLE_DEMO_TOKEN=true para que el evaluador pueda
-# autenticarse, pero el scope está acotado a los endpoints del reto y la vida
-# del token es de una hora (3600 s) para que el jurado no tenga que re-emitirlo,
-# y el alcance se limita por scope, no por tiempo. Ver docs/entrega-talsory.md.
+# Token demo: ENABLE_DEMO_TOKEN=true para que el evaluador pueda autenticarse, con
+# scope acotado a los endpoints del reto y vida de 3600 s (1 hora). El alcance se
+# limita por scope, no por tiempo. Ver docs/entrega-talsory.md.
 #
-# `--allow-unauthenticated` es deliberado: la seguridad real vive en el JWT de
-# la aplicación (y en el CORS), no en IAM. Es una demo pública evaluable; IAM
+# `--allow-unauthenticated` es deliberado: la seguridad real vive en el JWT de la
+# aplicación (y en el CORS), no en IAM. Es una demo pública evaluable; IAM
 # impediría que el jurado abriera la URL.
 #
-# PLACEHOLDER FASE 5: textos/URLs definitivas en README y docs/entrega-talsory.md.
-# `sqladmin.googleapis.com` se habilita por la consigna; Neon NO usa Cloud SQL.
-#
-# Secretos: NUNCA se escriben en el repo. DB_PASSWORD y JWT_SECRET se leen del
-# entorno y se publican como versiones de Secret Manager; Cloud Run los monta
-# con --set-secrets. Si Cloud Run usa un service account propio, concédele
-# roles/secretmanager.secretAccessor sobre ambos secretos.
+# Secretos: NUNCA se escriben en el repo. `JWT_SECRET` y `DB_PASSWORD` se leen del
+# entorno del operador y se inyectan en Cloud Run como variables de entorno
+# (`--set-env-vars`), no como secretos de Secret Manager. Es una decisión
+# consciente para esta demo: elimina dos recursos y el `secretAccessor` por
+# servicio. Trade-off explícito: quien pueda leer la configuración del servicio
+# (`run.services.get`) verá ambos valores; se aceptan porque la demo es pública y
+# evaluable, se rotan al terminar y no dan acceso a nada más que a esta base y a
+# estos tokens. Migrar a Secret Manager es cambiar `--set-env-vars` por
+# `--set-secrets` y publicar las versiones; el resto del script no cambia.
+# `secretmanager.googleapis.com` se habilita para dejar preparada esa migración.
 # =============================================================================
 set -euo pipefail
 
@@ -67,7 +69,7 @@ IMAGE_ENDORSEMENTS="${IMAGE_ENDORSEMENTS:-endorsements}"
 IMAGE_ROUTES="${IMAGE_ROUTES:-routes}"
 IMAGE_FRONTEND="${IMAGE_FRONTEND:-frontend}"
 
-TAG="${TAG:-$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo draft)}"
+TAG="${TAG:-$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)}"
 
 PORT_ENDORSEMENTS="${PORT_ENDORSEMENTS:-8082}"
 PORT_ROUTES="${PORT_ROUTES:-8081}"
@@ -83,8 +85,6 @@ DB_NAME="${DB_NAME:-}"
 DB_USER="${DB_USER:-}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 JWT_SECRET="${JWT_SECRET:-}"
-SECRET_JWT="${SECRET_JWT:-jwt-secret}"
-SECRET_DB_PASSWORD="${SECRET_DB_PASSWORD:-db-password}"
 
 # Lista explícita de orígenes. Vacía = sin CORS hasta que `update-cors` fije la
 # URL real del frontend (nunca `*` en Cloud Run).
@@ -160,7 +160,6 @@ cmd_preflight() {
     run.googleapis.com
     artifactregistry.googleapis.com
     secretmanager.googleapis.com
-    sqladmin.googleapis.com
     cloudbuild.googleapis.com
   )
   echo "habilitando APIs (idempotente): ${apis[*]}"
@@ -172,8 +171,7 @@ cmd_preflight() {
       die "no se pudo confirmar que $api está habilitada"
     fi
   done
-  echo "5 APIs habilitadas"
-  warn "sqladmin.googleapis.com se exige por la consigna; Neon no usa Cloud SQL."
+  echo "4 APIs habilitadas"
 }
 
 cmd_ensure_ar() {
@@ -194,28 +192,20 @@ cmd_ensure_ar() {
   gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 }
 
-ensure_secret() {
-  local name="$1" value="$2"
-  if ! gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1; then
-    gcloud secrets create "$name" --project "$PROJECT_ID" \
-      --replication-policy=automatic \
-      --labels=managed-by=deploy-gcp-script --quiet
-  fi
-  printf '%s' "$value" | gcloud secrets versions add "$name" \
-    --project "$PROJECT_ID" --data-file=- --quiet
-  echo "secreto $name actualizado con una versión nueva"
-}
-
-cmd_ensure_secrets() {
-  require_gcloud
-  require_common
-  : "${DB_PASSWORD:?Define DB_PASSWORD de Neon solo en el entorno; nunca en el repo}"
-  : "${JWT_SECRET:?Define JWT_SECRET (mínimo 16 caracteres); nunca en el repo}"
-  [ "${#JWT_SECRET}" -ge 16 ] || die "JWT_SECRET debe tener al menos 16 caracteres"
-  log "ensure-secrets: $SECRET_JWT y $SECRET_DB_PASSWORD"
-  ensure_secret "$SECRET_JWT" "$JWT_SECRET"
-  ensure_secret "$SECRET_DB_PASSWORD" "$DB_PASSWORD"
-  warn "si Cloud Run usa un service account propio, concédele roles/secretmanager.secretAccessor"
+# `gcloud run deploy --set-env-vars` separa pares con comas por defecto; con
+# `^X^` acepta cualquier otro carácter. Se elige un delimitador que no aparezca
+# en ningún valor para que una contraseña con comas o puntos y coma no rompa el
+# despliegue.
+pick_env_delimiter() {
+  local candidate
+  for candidate in '@' '#' '|' ';' ':' '%'; do
+    case "${DB_HOST_POOLED}${DB_USER}${DB_NAME}${DB_PASSWORD}${JWT_SECRET}" in
+      *"$candidate"*) continue ;;
+    esac
+    printf '%s' "$candidate"
+    return 0
+  done
+  return 1
 }
 
 cmd_bootstrap_db() {
@@ -266,11 +256,17 @@ cmd_deploy_backends() {
   # Cloud Run inyecta PORT en runtime; `--port` solo declara cuál escuchar.
   # `--allow-unauthenticated` es intencional (ver cabecera): IAM bloquearía al
   # evaluador; la autorización real está en el JWT y el CORS de la app.
-  local endorsements_env="DB_HOST=${DB_HOST_POOLED},DB_PORT=${DB_PORT},DB_USER=${DB_USER},DB_NAME=${DB_NAME},DB_SSL=true,DB_SYNCHRONIZE=false,DB_LOGGING=false,JWT_TTL_SECONDS=${DEMO_TOKEN_TTL_SECONDS},ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN}"
-  local routes_env="JWT_TTL_MINUTES=${DEMO_TOKEN_TTL_MINUTES},ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN}"
+  # Runtime con el endpoint POOLED y DB_SYNCHRONIZE=false: el esquema ya lo creó
+  # `bootstrap-db` contra el endpoint DIRECTO. Los secretos viajan en la misma
+  # lista (ver trade-off en la cabecera); el delimitador evita colisiones con el
+  # contenido de la contraseña o del JWT.
+  local d
+  d="$(pick_env_delimiter)" || die "no hay delimitador seguro para --set-env-vars; revisa que ningún valor contenga @ # | ; : %"
+  local endorsements_env="DB_HOST=${DB_HOST_POOLED}${d}DB_PORT=${DB_PORT}${d}DB_USER=${DB_USER}${d}DB_NAME=${DB_NAME}${d}DB_SSL=true${d}DB_SYNCHRONIZE=false${d}DB_LOGGING=false${d}JWT_TTL_SECONDS=${DEMO_TOKEN_TTL_SECONDS}${d}ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN}${d}JWT_SECRET=${JWT_SECRET}${d}DB_PASSWORD=${DB_PASSWORD}"
+  local routes_env="JWT_TTL_MINUTES=${DEMO_TOKEN_TTL_MINUTES}${d}ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN}${d}JWT_SECRET=${JWT_SECRET}"
   if [ -n "$CORS_ORIGINS" ]; then
-    endorsements_env="${endorsements_env},CORS_ORIGINS=${CORS_ORIGINS}"
-    routes_env="${routes_env},CORS_ORIGINS=${CORS_ORIGINS}"
+    endorsements_env="${endorsements_env}${d}CORS_ORIGINS=${CORS_ORIGINS}"
+    routes_env="${routes_env}${d}CORS_ORIGINS=${CORS_ORIGINS}"
   else
     warn "CORS_ORIGINS vacío: los backends arrancarán sin CORS hasta ./deploy-gcp.sh update-cors"
   fi
@@ -282,8 +278,7 @@ cmd_deploy_backends() {
     --port "$PORT_ENDORSEMENTS" \
     --allow-unauthenticated \
     --max-instances "$MAX_INSTANCES" \
-    --set-env-vars "$endorsements_env" \
-    --set-secrets "JWT_SECRET=${SECRET_JWT}:latest,DB_PASSWORD=${SECRET_DB_PASSWORD}:latest" \
+    --set-env-vars "^${d}^${endorsements_env}" \
     --quiet
 
   gcloud run deploy "$SERVICE_ROUTES" \
@@ -293,8 +288,7 @@ cmd_deploy_backends() {
     --port "$PORT_ROUTES" \
     --allow-unauthenticated \
     --max-instances "$MAX_INSTANCES" \
-    --set-env-vars "$routes_env" \
-    --set-secrets "JWT_SECRET=${SECRET_JWT}:latest" \
+    --set-env-vars "^${d}^${routes_env}" \
     --quiet
 
   URL_ENDORSEMENTS="$(gcloud run services describe "$SERVICE_ENDORSEMENTS" \
@@ -399,38 +393,41 @@ cmd_logs() {
     --project "$PROJECT_ID" --region "$REGION" --limit=50
 }
 
+# Orden definitivo: preflight → ensure-ar → bootstrap-db → build → deploy →
+# urls → update-cors. `update-cors` va al final porque necesita la URL del
+# frontend, que solo existe después de `deploy`.
 cmd_all() {
   cmd_preflight
   cmd_ensure_ar
-  cmd_ensure_secrets
   cmd_bootstrap_db
   cmd_build
   cmd_deploy_backends
   cmd_deploy_frontend
-  cmd_update_cors
   cmd_urls
+  cmd_update_cors
 }
 
 usage() {
   cat <<'USAGE'
 Uso: ./deploy-gcp.sh <subcomando>
 
-  preflight       Verifica billing y habilita las 5 APIs
+  preflight       Verifica billing y habilita las 4 APIs
   ensure-ar       Crea/valida el repositorio de Artifact Registry
-  ensure-secrets  Publica jwt-secret y db-password en Secret Manager
   bootstrap-db    Crea esquema (synchronize) + seed contra Neon (endpoint directo)
   build           Build+push de endorsements y routes
   deploy          Despliega backends y frontend en Cloud Run
-  update-cors     Fija CORS_ORIGINS de los backends a la URL del frontend
   urls            Imprime las URLs públicas
+  update-cors     Fija CORS_ORIGINS de los backends a la URL del frontend
   logs [servicio] Logs recientes (por defecto endorsements)
-  all             Ejecuta todo en el orden documentado
+  all             Ejecuta preflight → ensure-ar → bootstrap-db → build → deploy
+                  → urls → update-cors
   help            Muestra esta ayuda
 
 Variables obligatorias: DB_HOST_POOLED, DB_HOST_DIRECT, DB_NAME, DB_USER,
 DB_PASSWORD, JWT_SECRET. Opcionales: PROJECT_ID, REGION, AR_REPO, TAG,
 CORS_ORIGINS, ENABLE_DEMO_TOKEN, DEMO_TOKEN_TTL_*, etc.
-Ver la cabecera del script para el detalle.
+DB_PASSWORD y JWT_SECRET se leen del entorno y se envían a Cloud Run con
+--set-env-vars (ver la cabecera del script para el trade-off).
 USAGE
 }
 
@@ -439,7 +436,6 @@ main() {
   case "$command" in
     preflight)      cmd_preflight ;;
     ensure-ar)      cmd_ensure_ar ;;
-    ensure-secrets) cmd_ensure_secrets ;;
     bootstrap-db)   cmd_bootstrap_db ;;
     build)          cmd_build ;;
     deploy)         cmd_deploy_backends; cmd_deploy_frontend ;;

@@ -19,13 +19,14 @@
 # _VITE_API_ENDORSEMENTS_URL=https://endorsements-xxx.run.app,\
 # _VITE_API_ROUTES_URL=https://routes-xxx.run.app
 #
-# NOTA: los defaults `REPLACE_ME` son deliberados. Sirven para que el paso de
-# validación aborte con un mensaje claro en vez de construir una SPA rota.
+# Los valores `REPLACE_ME` son CENTINELAS de validación, no placeholders por
+# rellenar: deploy-gcp.sh siempre pasa los valores reales y, si faltara alguno,
+# el primer paso aborta con un mensaje claro en vez de construir una SPA rota.
 # =============================================================================
 substitutions:
   _AR_HOST: "REPLACE_ME"
   _IMAGE_NAME: "frontend"
-  _TAG: "draft"
+  _TAG: "unknown"
   _VITE_API_ENDORSEMENTS_URL: "REPLACE_ME"
   _VITE_API_ROUTES_URL: "REPLACE_ME"
   _DOCKERFILE: "Dockerfile"
