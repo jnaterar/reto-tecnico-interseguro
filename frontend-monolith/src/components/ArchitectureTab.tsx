@@ -19,16 +19,16 @@ export function ArchitectureTab(): ReactElement {
 
   return (
     <div className="arch-tab-wrap">
-      {/* a) Encabezado interno */}
+      {/* Encabezado interno */}
       <header className="arch-tab-header">
         <p className="eyebrow">Reto 3 · Arquitectura de Software</p>
-        <h2>Del problema al diseño: duplicidad de desembolsos</h2>
+        <h2>Duplicidad de Desembolsos</h2>
         <p className="muted arch-lead">
           Eliminar el riesgo de desembolsos duplicados por timeouts de INARI y desacoplar la experiencia del cliente.
         </p>
       </header>
 
-      {/* b) Bloque comparativo AS-IS vs TO-BE */}
+      {/* Bloque comparativo AS-IS vs TO-BE */}
       <section className="arch-compare-grid" aria-label="Comparativa de arquitectura AS-IS y TO-BE">
         {/* AS-IS */}
         <div className="arch-card arch-card-asis">
@@ -83,48 +83,10 @@ export function ArchitectureTab(): ReactElement {
         </div>
       </section>
 
-      {/* c) Pilares de la solución (4 cards) */}
-      <section className="arch-pillars-section" aria-label="Pilares evaluados de la solución">
-        <h3 className="section-subtitle">Pilares de la solución propuesta</h3>
-        <div className="arch-pillars-grid">
-          <div className="arch-pillar-card">
-            <span className="pillar-num">01</span>
-            <h4>Escalabilidad</h4>
-            <p className="muted">
-              Diseño completamente stateless + colas de mensajería en Google Cloud Pub/Sub + workers en Cloud Run con autoscaling horizontal según demanda.
-            </p>
-          </div>
-
-          <div className="arch-pillar-card">
-            <span className="pillar-num">02</span>
-            <h4>Resiliencia y reintentos</h4>
-            <p className="muted">
-              Patrón Circuit Breaker, reintentos con backoff exponencial + jitter aleatorio, Dead Letter Queue (DLQ) para alertas y job de reconciliación automática.
-            </p>
-          </div>
-
-          <div className="arch-pillar-card">
-            <span className="pillar-num">03</span>
-            <h4>Control de concurrencia</h4>
-            <p className="muted">
-              Idempotencia estricta (restricción <code>UNIQUE</code> en base de datos sobre <code>Idempotency-Key</code>) y Policy Lock distribuido en Redis para serializar intentos sobre la misma póliza.
-            </p>
-          </div>
-
-          <div className="arch-pillar-card">
-            <span className="pillar-num">04</span>
-            <h4>Seguridad y Costo</h4>
-            <p className="muted">
-              Canal mTLS hacia INARI, validación JWT en el gateway perimetral, gestión de secretos en Google Cloud KMS, y costo optimizado mediante arquitectura serverless en capa gratuita/pago por uso.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* d) Galería de diagramas con Lightbox */}
+      {/* Galería de diagramas con Lightbox */}
       <section className="arch-gallery-section" aria-label="Galería de diagramas de arquitectura">
         <div className="arch-gallery-head">
-          <h3 className="section-subtitle">Diagramas arquitectónicos en alta definición</h3>
+          <h3 className="section-subtitle">Diagramas Arquitectónicos</h3>
           <p className="muted">Haz click en cualquiera de las láminas para ampliarla a pantalla completa.</p>
         </div>
 
@@ -163,7 +125,45 @@ export function ArchitectureTab(): ReactElement {
         </div>
       </section>
 
-      {/* e) Nota de honestidad */}
+      {/* Pilares de la solución */}
+      <section className="arch-pillars-section" aria-label="Pilares evaluados de la solución">
+        <h3 className="section-subtitle">Pilares de la Solución Propuesta</h3>
+        <div className="arch-pillars-grid">
+          <div className="arch-pillar-card">
+            <span className="pillar-num">01</span>
+            <h4>Escalabilidad</h4>
+            <p className="muted">
+              Diseño completamente stateless + colas de mensajería en Google Cloud Pub/Sub + workers en Cloud Run con autoscaling horizontal según demanda.
+            </p>
+          </div>
+
+          <div className="arch-pillar-card">
+            <span className="pillar-num">02</span>
+            <h4>Resiliencia y reintentos</h4>
+            <p className="muted">
+              Patrón Circuit Breaker, reintentos con backoff exponencial + jitter aleatorio, Dead Letter Queue (DLQ) para alertas y job de reconciliación automática.
+            </p>
+          </div>
+
+          <div className="arch-pillar-card">
+            <span className="pillar-num">03</span>
+            <h4>Control de concurrencia</h4>
+            <p className="muted">
+              Idempotencia estricta (restricción <code>UNIQUE</code> en base de datos sobre <code>Idempotency-Key</code>) y Policy Lock distribuido en Redis para serializar intentos sobre la misma póliza.
+            </p>
+          </div>
+
+          <div className="arch-pillar-card">
+            <span className="pillar-num">04</span>
+            <h4>Seguridad y Costo</h4>
+            <p className="muted">
+              Canal mTLS hacia INARI, validación JWT en el gateway perimetral, gestión de secretos en Google Cloud KMS, y costo optimizado mediante arquitectura serverless en capa gratuita/pago por uso.
+            </p>
+          </div>
+        </div>
+      </section>      
+
+      {/* Nota de honestidad */}
       <footer className="arch-tab-footer">
         <p className="honesty-line">
           <em>Diseño arquitectónico documentado en draw.io. No incluye implementación en código en este alcance.</em>

@@ -643,7 +643,7 @@ p {
 }
 
 .secondary-stat-card .stat-number {
-  font-size: clamp(1.2rem, 1.8vw, 1.6rem);
+  font-size: clamp(1.2rem, 1.75vw, 1.5rem);
   font-weight: 800;
   color: #0284c7;
   line-height: 1.1;
@@ -825,12 +825,17 @@ p {
 }
 
 .panel-grid > .card {
-  min-height: clamp(340px, 52vh, 620px);
+  min-height: clamp(440px, 56vh, 680px);
+}
+
+.routes-card {
+  overflow-x: hidden;
 }
 
 @media (min-width: 901px) {
   .panel-grid > .card {
-    height: clamp(440px, 58vh, 680px);
+    min-height: clamp(500px, 62vh, 760px);
+    height: auto;
   }
 }
 
@@ -1705,16 +1710,133 @@ select:focus {
   min-height: clamp(220px, 32vh, 440px);
 }
 
-.details {
-  margin-top: 14px;
+/* Inspector de Payload HTTP en Reto 2 (Ruta de Grúas) */
+.payload-inspector {
+  margin-top: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow: hidden;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.details summary {
+.payload-inspector:hover {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+}
+
+.payload-inspector[open] {
+  background: #ffffff;
+  border-color: #93c5fd;
+  box-shadow: 0 4px 14px -3px rgba(37, 99, 235, 0.08);
+}
+
+.payload-inspector-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
   cursor: pointer;
+  user-select: none;
+  list-style: none;
+  outline: none;
+}
+
+.payload-inspector-summary::-webkit-details-marker {
+  display: none;
+}
+
+.payload-inspector-summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: 10px;
+}
+
+.payload-inspector-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.payload-method-pill {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.payload-inspector-title {
   font-size: 0.82rem;
+  font-weight: 650;
+  color: #1e293b;
+}
+
+.payload-inspector-badge {
+  font-size: 0.72rem;
   font-weight: 600;
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.08);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.payload-chevron {
+  font-size: 0.8rem;
+  color: #64748b;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-left: 8px;
+}
+
+.payload-inspector[open] .payload-chevron {
+  transform: rotate(180deg);
+  color: var(--primary);
+}
+
+.payload-inspector-content {
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--border);
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.payload-inspector-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
   color: var(--text-muted);
-  margin-bottom: 8px;
+}
+
+.payload-inspector-hint code {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  background: #f1f5f9;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #0f172a;
+}
+
+.payload-json-wrap {
+  border-radius: 10px;
+  overflow: hidden;
+  max-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+
+.payload-json-wrap .json-block {
+  max-height: 240px;
+}
+
+.payload-json-wrap .json-block pre {
+  max-height: 190px;
+  overflow-y: auto;
 }
 
 .panel-grid > .card > .json-block {

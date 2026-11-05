@@ -55,8 +55,8 @@ export function DocumentationPage(): ReactElement {
     <div className="page-wrap page-doc-container">
       <header className="doc-page-header">
         <p className="eyebrow">Documentación Técnica &amp; Stack</p>
-        <h1 className="doc-main-title">Cómo se resolvió cada reto</h1>
-        <p className="muted doc-subtitle">El por qué detrás de cada decisión, explicado simple.</p>
+        <h1 className="doc-main-title">¿Cómo se Resolvió Cada Reto?</h1>
+        <p className="muted doc-subtitle">La razón detrás de cada decisión, explicada de manera simple.</p>
       </header>
 
       {/* ARTÍCULO RETO 1 */}
@@ -66,7 +66,7 @@ export function DocumentationPage(): ReactElement {
             <span className="article-badge r1-badge">Reto 1 · Traductor de endosos</span>
             <span className="muted small">Node.js · Hapi · TypeORM</span>
           </div>
-          <h2>Normalización y traducción dinámica hacia el core</h2>
+          <h2>Normalización y Traducción Dinámica hacia el Core</h2>
         </header>
 
         {/* ① En palabras sencillas */}
@@ -183,7 +183,7 @@ curl -s -X POST https://endorsements-919990628042.us-central1.run.app/v1/endorse
             <span className="article-badge r2-badge">Reto 2 · Ruta óptima de grúa</span>
             <span className="muted small">Golang · Algoritmo Dijkstra</span>
           </div>
-          <h2>Cálculo determinista de camino mínimo en grafos no dirigidos</h2>
+          <h2>Cálculo Determinista de Camino Mínimo en Grafos No Dirigidos</h2>
         </header>
 
         {/* ① En palabras sencillas */}
@@ -299,7 +299,7 @@ curl -s -X POST https://routes-919990628042.us-central1.run.app/v1/routes/optima
             <span className="article-badge r3-badge">Reto 3 · Diseño de arquitectura</span>
             <span className="muted small">Sistemas Distribuidos · Idempotencia</span>
           </div>
-          <h2>Eliminación de desembolsos duplicados por timeouts de INARI</h2>
+          <h2>Eliminación de Desembolsos Duplicados por Timeouts de INARI</h2>
         </header>
 
         {/* ① En palabras sencillas */}
@@ -490,7 +490,7 @@ curl -s -X POST https://routes-919990628042.us-central1.run.app/v1/routes/optima
             <span className="article-badge reproduce-badge">Guía Rápida · Local</span>
             <span className="muted small">Docker Compose · CLI · Smoke Tests</span>
           </div>
-          <h2>Cómo reproducir en 3 pasos</h2>
+          <h2>Cómo Reproducir en 3 Pasos</h2>
           <p className="article-desc">
             Comandos mínimos para clonar, desplegar y validar la salud de los servicios en entorno local:
           </p>
@@ -519,7 +519,7 @@ curl -s http://localhost:8082/health && echo " -> Endosos OK"`}
             <span className="article-badge honesty-badge">Criterio Técnico &amp; Trade-offs</span>
             <span className="muted small">Transparencia de Arquitectura</span>
           </div>
-          <h2>Notas de honestidad técnica</h2>
+          <h2>Notas de Honestidad Técnica</h2>
           <p className="article-desc">
             Decisiones conscientes de diseño, límites del alcance y consideraciones para un entorno corporativo real:
           </p>

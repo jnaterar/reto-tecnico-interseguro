@@ -87,9 +87,16 @@ export function RoutesTab() {
     }
   };
 
+  // Payload reactivo en tiempo real enviado al microservicio en Go
+  const currentPayload = {
+    accidentLocation,
+    depots: DISTRICTS.filter((district) => selectedDepots.includes(district)),
+    graph: LIMA_GRAPH,
+  };
+
   return (
     <div className="panel-grid">
-      <form className="card" onSubmit={(event) => void handleSubmit(event)}>
+      <form className="card routes-card" onSubmit={(event) => void handleSubmit(event)}>
         <header className="card-header">
           <div>
             <h2>Red de grúas de Lima</h2>
@@ -151,9 +158,28 @@ export function RoutesTab() {
 
         {error && <ErrorPanel error={error} />}
 
-        <details className="details">
-          <summary>Ver red enviada al backend (JSON)</summary>
-          <JsonBlock value={LIMA_GRAPH} label="graph" />
+        {/* Inspector interactivo y accesible del payload HTTP enviado al backend */}
+        <details className="payload-inspector">
+          <summary className="payload-inspector-summary">
+            <div className="payload-inspector-meta">
+              <span className="payload-method-pill">POST</span>
+              <span className="payload-inspector-title">Payload de la petición</span>
+              <span className="payload-inspector-badge">
+                Topología dinámica · {DISTRICTS.length} distritos
+              </span>
+            </div>
+            <span className="payload-chevron" aria-hidden="true">
+              ▾
+            </span>
+          </summary>
+          <div className="payload-inspector-content">
+            <p className="payload-inspector-hint">
+              <strong>Arquitectura desacoplada:</strong> El microservicio en Go es un motor de grafos agnóstico a la ciudad: no tiene nodos ni rutas quemadas en su código. Recibe la topología vial completa en el cuerpo de la petición (<code>graph</code>) junto con el siniestro y las bases, resolviendo el camino mínimo sin depender de datos estáticos en el backend.
+            </p>
+            <div className="payload-json-wrap">
+              <JsonBlock value={currentPayload} label="request payload (POST /v1/routes/optimal)" />
+            </div>
+          </div>
         </details>
       </form>
 

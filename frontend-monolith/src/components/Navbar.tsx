@@ -29,9 +29,7 @@ export function Navbar({ health }: NavbarProps): ReactElement {
         {/* Marca del proyecto e indicador de estado de servicios */}
         <div className="nav-brand-group">
           <NavLink to="/retos" className="nav-brand-link" onClick={closeMenu}>
-            <span className="nav-brand-title">Reto Técnico</span>
-            <span className="nav-brand-sep" aria-hidden="true">·</span>
-            <span className="nav-brand-sub">Software Architecture</span>
+            <span className="nav-brand-title">Arquitectura de Software</span>
           </NavLink>
 
           <ServicesStatusPopover health={health} />

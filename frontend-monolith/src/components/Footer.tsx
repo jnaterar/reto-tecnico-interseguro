@@ -25,7 +25,7 @@ export function Footer(): ReactElement {
                 <NavLink to="/documentacion">Documentación &amp; Stack</NavLink>
               </li>
               <li>
-                <NavLink to="/perfil">Sobre el autor</NavLink>
+                <NavLink to="/perfil">Sobre el Autor</NavLink>
               </li>
             </ul>
           </div>

@@ -1,4 +1,5 @@
-import { useState, type KeyboardEvent, type ReactElement } from 'react';
+import { type KeyboardEvent, type ReactElement } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ArchitectureTab } from '../components/ArchitectureTab';
 import { EndorseTab } from '../components/EndorseTab';
 import { RoutesTab } from '../components/RoutesTab';
@@ -13,13 +14,20 @@ interface TabItem {
 }
 
 const TABS: ReadonlyArray<TabItem> = [
-  { id: 'endorse', label: 'Traductor de endosos', hint: 'Node.js + Hapi · TypeORM', badge: 'Reto 1' },
-  { id: 'routes', label: 'Ruta óptima de grúa', hint: 'Golang · Dijkstra · Min-Heap', badge: 'Reto 2' },
+  { id: 'endorse', label: 'Traductor de Endosos', hint: 'Node.js + Hapi · TypeORM', badge: 'Reto 1' },
+  { id: 'routes', label: 'Ruta Óptima de Grúa', hint: 'Golang · Dijkstra · Min-Heap', badge: 'Reto 2' },
   { id: 'architecture', label: 'Arquitectura – Préstamos', hint: 'Diseño Cloud · Idempotencia', badge: 'Reto 3' },
 ];
 
 export function RetosPage(): ReactElement {
-  const [activeTab, setActiveTab] = useState<TabId>('endorse');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const activeTab: TabId =
+    rawTab === 'routes' || rawTab === 'architecture' ? rawTab : 'endorse';
+
+  const selectTab = (id: TabId): void => {
+    setSearchParams(id === 'endorse' ? {} : { tab: id });
+  };
 
   // Navegación accesible por teclado entre pestañas con flechas izquierda / derecha
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, currentIndex: number): void => {
@@ -35,7 +43,7 @@ export function RetosPage(): ReactElement {
     event.preventDefault();
     const targetTab = TABS[nextIndex];
     if (targetTab) {
-      setActiveTab(targetTab.id);
+      selectTab(targetTab.id);
       const nextBtn = document.getElementById(`tab-btn-${targetTab.id}`);
       nextBtn?.focus();
     }
@@ -46,7 +54,7 @@ export function RetosPage(): ReactElement {
       {/* Encabezado principal de la página de Retos */}
       <header className="challenges-page-header">
         <p className="eyebrow">Demostración en vivo</p>
-        <h1 className="challenges-main-title">Retos Técnicos en Producción</h1>
+        <h1 className="challenges-main-title">Retos Técnicos</h1>
         <p className="muted challenges-subtitle">
           Interactúa directamente con los microservicios desplegados en Google Cloud Run y explora la arquitectura para eliminar duplicidad de desembolsos.
         </p>
@@ -67,7 +75,7 @@ export function RetosPage(): ReactElement {
                 aria-controls={`tabpanel-${tab.id}`}
                 tabIndex={isActive ? 0 : -1}
                 className={`tab tab-${tab.id} ${isActive ? 'is-active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => selectTab(tab.id)}
                 onKeyDown={(event) => handleTabKeyDown(event, index)}
               >
                 <div className="tab-badge-row">

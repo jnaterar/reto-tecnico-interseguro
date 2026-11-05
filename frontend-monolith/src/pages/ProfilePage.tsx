@@ -5,7 +5,7 @@ export function ProfilePage(): ReactElement {
     <div className="page-wrap page-profile-container">
       <header className="profile-page-header">
         <p className="eyebrow">Trayectoria &amp; Liderazgo Técnico</p>
-        <h1 className="profile-main-title">Sobre el autor</h1>
+        <h1 className="profile-main-title">Sobre el Autor</h1>
       </header>
 
       <div className="profile-card">
