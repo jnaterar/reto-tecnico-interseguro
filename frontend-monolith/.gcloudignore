@@ -1,0 +1,14 @@
+# Contexto que se sube a Cloud Build para construir la SPA.
+# El Dockerfile hace `npm ci` y `npm run build` dentro de la imagen, así que
+# node_modules y dist locales no deben viajar en la subida.
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+*.md
+*.log
+.DS_Store
+
+# gcloud lo añade automáticamente, se declara por claridad
+.gcloudignore

@@ -1,0 +1,89 @@
+# =============================================================================
+# cloudbuild-frontend.yaml — build de la SPA con las VITE_* (BUILD-TIME)
+#
+# ¿Por qué existe este archivo y no un simple `gcloud builds submit --tag`?
+#   1. Vite incrusta `import.meta.env.VITE_*` en el bundle DURANTE `npm run
+#      build`. No son variables de runtime: si faltan, la SPA queda apuntando a
+#      los fallbacks relativos `/endorse-api` y `/routes-api`.
+#   2. En docker-compose esos fallbacks funcionan porque nginx hace proxy a
+#      `endorsements:8082` / `routes:8081`. En Cloud Run ese DNS interno NO
+#      existe y cada backend tiene su propia URL HTTPS, así que el frontend debe
+#      construirse con las URLs absolutas de los servicios ya desplegados.
+#   3. `gcloud builds submit --tag` no permite pasar `--build-arg`; con este
+#      config sí, y el build FALLA si falta alguna substitution.
+#
+# Invocación (la hace deploy-gcp.sh; el contexto es frontend-monolith):
+#   gcloud builds submit frontend-monolith \
+#     --config cloudbuild-frontend.yaml \
+#     --substitutions=_AR_HOST=us-central1-docker.pkg.dev/PROYECTO/REPO,_TAG=abc123,\
+# _VITE_API_ENDORSEMENTS_URL=https://endorsements-xxx.run.app,\
+# _VITE_API_ROUTES_URL=https://routes-xxx.run.app
+#
+# NOTA: los defaults `REPLACE_ME` son deliberados. Sirven para que el paso de
+# validación aborte con un mensaje claro en vez de construir una SPA rota.
+# =============================================================================
+substitutions:
+  _AR_HOST: "REPLACE_ME"
+  _IMAGE_NAME: "frontend"
+  _TAG: "draft"
+  _VITE_API_ENDORSEMENTS_URL: "REPLACE_ME"
+  _VITE_API_ROUTES_URL: "REPLACE_ME"
+  _DOCKERFILE: "Dockerfile"
+  _CONTEXT: "."
+
+steps:
+  # ---------------------------------------------------------------------------
+  # 1) Fallar ruidosamente ANTES de construir si falta una substitution.
+  # ---------------------------------------------------------------------------
+  - id: validate-substitutions
+    name: "gcr.io/cloud-builders/docker"
+    entrypoint: sh
+    args:
+      - -ceu
+      - |
+        fail=0
+        check() {
+          if [ -z "$2" ] || [ "$2" = "REPLACE_ME" ]; then
+            echo "ERROR: falta la substitution obligatoria $1" >&2
+            fail=1
+          fi
+        }
+        check _AR_HOST "${_AR_HOST}"
+        check _VITE_API_ENDORSEMENTS_URL "${_VITE_API_ENDORSEMENTS_URL}"
+        check _VITE_API_ROUTES_URL "${_VITE_API_ROUTES_URL}"
+        if [ "$fail" -ne 0 ]; then
+          echo "" >&2
+          echo "Build abortado: las VITE_* son BUILD-TIME y sin ellas la SPA" >&2
+          echo "quedaría llamando a /endorse-api, que no existe en Cloud Run." >&2
+          echo "Pásalas con --substitutions=_AR_HOST=...,_VITE_API_ENDORSEMENTS_URL=...,_VITE_API_ROUTES_URL=..." >&2
+          exit 1
+        fi
+        echo "Substitutions OK: ${_AR_HOST} | ${_VITE_API_ENDORSEMENTS_URL} | ${_VITE_API_ROUTES_URL}"
+
+  # ---------------------------------------------------------------------------
+  # 2) Build con los build-args de Vite (los consume el Dockerfile como ARG→ENV
+  #    antes de `npm run build`).
+  # ---------------------------------------------------------------------------
+  - id: build-frontend
+    name: "gcr.io/cloud-builders/docker"
+    args:
+      - build
+      - --build-arg=VITE_API_ENDORSEMENTS_URL=${_VITE_API_ENDORSEMENTS_URL}
+      - --build-arg=VITE_API_ROUTES_URL=${_VITE_API_ROUTES_URL}
+      - --tag=${_AR_HOST}/${_IMAGE_NAME}:${_TAG}
+      - --file=${_DOCKERFILE}
+      - ${_CONTEXT}
+
+  # ---------------------------------------------------------------------------
+  # 3) Push explícito a Artifact Registry (misma imagen que se desplegará).
+  # ---------------------------------------------------------------------------
+  - id: push-frontend
+    name: "gcr.io/cloud-builders/docker"
+    args:
+      - push
+      - ${_AR_HOST}/${_IMAGE_NAME}:${_TAG}
+
+timeout: 1800s
+
+options:
+  logging: CLOUD_LOGGING_ONLY

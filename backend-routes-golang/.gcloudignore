@@ -1,0 +1,14 @@
+# Contexto que se sube a Cloud Build para `gcloud builds submit`.
+# El Dockerfile solo compila go.mod, cmd/ e internal/.
+bin/
+coverage/
+*_test.go
+*.out
+*.exe
+*.test
+.env
+*.log
+.DS_Store
+
+# gcloud lo añade automáticamente, se declara por claridad
+.gcloudignore

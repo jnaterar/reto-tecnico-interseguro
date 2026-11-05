@@ -15,6 +15,9 @@ __pycache__/
 .env.local
 .env.*.local
 
+# Estado local de deploy-gcp.sh (URLs públicas capturadas)
+.deploy-state.env
+
 # Binarios Go
 bin/
 *.exe

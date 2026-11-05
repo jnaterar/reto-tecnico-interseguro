@@ -1,0 +1,15 @@
+# Contexto que se sube a Cloud Build para `gcloud builds submit`.
+# Solo necesita lo que copia el Dockerfile (package*.json, tsconfig.json, src/).
+# Sin esto, un `npm ci` local haría que se subieran node_modules y dist.
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+tests/
+*.md
+*.log
+.DS_Store
+
+# gcloud lo añade automáticamente, se declara por claridad
+.gcloudignore
