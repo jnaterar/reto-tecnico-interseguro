@@ -13,6 +13,12 @@ server {
     listen ${PORT};
     server_name _;
 
+    # Endurecimiento mínimo de la SPA. No hay CSP ni WAF: fuera de alcance.
+    # `always` hace que también se apliquen a respuestas 4xx/5xx.
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
     root /usr/share/nginx/html;
     index index.html;
 
@@ -28,7 +34,7 @@ server {
     # Healthcheck del propio contenedor.
     location = /healthz {
         access_log off;
-        add_header Content-Type text/plain;
+        default_type text/plain;
         return 200 'ok';
     }
 
