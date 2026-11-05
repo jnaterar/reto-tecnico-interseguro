@@ -56,7 +56,7 @@ export function App() {
   }, []);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell page-wrap">
       <header className="app-header">
         <div>
           <p className="eyebrow">Reto Técnico · Technical Lead</p>

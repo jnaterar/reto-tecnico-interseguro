@@ -151,7 +151,7 @@ export function EndorseTab() {
           </div>
         </header>
 
-        <label className="field">
+        <label className="field field-editor">
           <span>Payload de entrada (JSON)</span>
           <textarea
             className="code-input"

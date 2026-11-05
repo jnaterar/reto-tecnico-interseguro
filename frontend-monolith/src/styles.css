@@ -24,6 +24,7 @@ html,
 body {
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
 }
 
 body {
@@ -58,10 +59,19 @@ p {
   font-size: 0.9rem;
 }
 
+.page-wrap {
+  width: 100%;
+  max-width: 1400px;
+  margin-inline: auto;
+  padding-inline: clamp(16px, 4vw, 40px);
+}
+
 .app-shell {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 40px 20px 56px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding-block: 40px 56px;
+  box-sizing: border-box;
 }
 
 .app-header {
@@ -86,6 +96,8 @@ p {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+  margin-left: auto;
 }
 
 .health-pill {
@@ -124,7 +136,7 @@ p {
 
 .tab-bar {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 22px;
 }
@@ -166,9 +178,9 @@ p {
 
 .panel-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  gap: 22px;
-  align-items: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(16px, 2vw, 32px);
+  align-items: stretch;
 }
 
 .card {
@@ -178,6 +190,18 @@ p {
   padding: 22px;
   box-shadow: var(--shadow);
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-grid > .card {
+  min-height: clamp(340px, 52vh, 620px);
+}
+
+@media (min-width: 901px) {
+  .panel-grid > .card {
+    height: clamp(440px, 58vh, 680px);
+  }
 }
 
 .card-header {
@@ -217,6 +241,14 @@ p {
   margin-bottom: 14px;
 }
 
+.field-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 0;
+}
+
 .field > span {
   font-size: 0.8rem;
   font-weight: 600;
@@ -244,10 +276,15 @@ textarea:focus {
 }
 
 .code-input {
+  width: 100%;
+  flex: 1;
+  height: 100%;
   font-family: var(--mono);
-  font-size: 0.82rem;
+  font-size: clamp(12px, 1.05vw, 14px);
   line-height: 1.5;
   resize: vertical;
+  overflow: auto;
+  box-sizing: border-box;
 }
 
 select {
@@ -318,7 +355,7 @@ select:focus {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  margin-top: 4px;
+  margin-top: 14px;
 }
 
 .primary-button,
@@ -336,6 +373,7 @@ select:focus {
   border: 1px solid var(--primary);
   background: var(--primary);
   color: #ffffff;
+  min-width: 130px;
 }
 
 .primary-button:hover:not(:disabled) {
@@ -436,12 +474,16 @@ select:focus {
 .empty-state {
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  align-items: center;
   gap: 6px;
   padding: 48px 20px;
   text-align: center;
   border: 1px dashed var(--border);
   border-radius: 12px;
   background: var(--surface-muted);
+  flex: 1;
+  min-height: clamp(220px, 32vh, 440px);
 }
 
 .details {
@@ -456,11 +498,20 @@ select:focus {
   margin-bottom: 8px;
 }
 
+.panel-grid > .card > .json-block {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .json-block {
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid #0b1220;
   background: #0f172a;
+  display: flex;
+  flex-direction: column;
 }
 
 .json-block-head {
@@ -492,12 +543,18 @@ select:focus {
 .json-block pre {
   margin: 0;
   padding: 14px 16px;
-  max-height: 460px;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
   overflow: auto;
+  resize: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   color: #dbe6fb;
   font-family: var(--mono);
-  font-size: 0.78rem;
-  line-height: 1.55;
+  font-size: clamp(12px, 1.05vw, 14px);
+  line-height: 1.5;
 }
 
 .route-result {
@@ -574,16 +631,65 @@ select:focus {
 }
 
 @media (max-width: 900px) {
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .health-group {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .panel-grid {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: 1fr;
+  }
+
+  .panel-grid > .card {
+    height: auto;
+    min-height: auto;
+  }
+
+  .field-editor .code-input {
+    height: 280px;
+    min-height: 200px;
+  }
+
+  .json-block pre {
+    height: auto;
+    max-height: 440px;
+    min-height: 180px;
+  }
+
+  .empty-state {
+    min-height: 200px;
   }
 
   .app-shell {
-    padding: 28px 16px 40px;
+    padding-block: 28px 40px;
   }
 }
 
 @media (max-width: 520px) {
+  .tab {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 140px;
+    padding: 10px 14px;
+  }
+
+  .form-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .form-actions .primary-button,
+  .form-actions .ghost-button {
+    width: 100%;
+    text-align: center;
+  }
+
   .form-grid {
     grid-template-columns: minmax(0, 1fr);
   }
