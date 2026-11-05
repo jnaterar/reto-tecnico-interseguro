@@ -33,7 +33,8 @@
 #
 # Token demo (Fase 4): ENABLE_DEMO_TOKEN=true para que el evaluador pueda
 # autenticarse, pero el scope está acotado a los endpoints del reto y la vida
-# del token es corta (15 min por defecto). Ver docs/entrega-talsory.md.
+# del token es de una hora (3600 s) para que el jurado no tenga que re-emitirlo,
+# y el alcance se limita por scope, no por tiempo. Ver docs/entrega-talsory.md.
 #
 # `--allow-unauthenticated` es deliberado: la seguridad real vive en el JWT de
 # la aplicación (y en el CORS), no en IAM. Es una demo pública evaluable; IAM
@@ -91,9 +92,10 @@ CORS_ORIGINS="${CORS_ORIGINS:-}"
 # Demo pública evaluable: el jurado necesita emitir token. El scope está
 # acotado en cada backend a los endpoints del reto.
 ENABLE_DEMO_TOKEN="${ENABLE_DEMO_TOKEN:-true}"
-# Vida corta del token demo: suficiente para evaluar y caduca pronto.
-DEMO_TOKEN_TTL_SECONDS="${DEMO_TOKEN_TTL_SECONDS:-900}"
-DEMO_TOKEN_TTL_MINUTES="${DEMO_TOKEN_TTL_MINUTES:-15}"
+# Vida del token demo: una hora, de sobra para una sesión de evaluación.
+# El alcance se limita por scope, no por tiempo.
+DEMO_TOKEN_TTL_SECONDS="${DEMO_TOKEN_TTL_SECONDS:-3600}"
+DEMO_TOKEN_TTL_MINUTES="${DEMO_TOKEN_TTL_MINUTES:-60}"
 
 # Estado local (URLs públicas). No se versiona (ver .gitignore).
 STATE_FILE="${STATE_FILE:-$REPO_ROOT/.deploy-state.env}"
