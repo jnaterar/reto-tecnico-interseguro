@@ -520,6 +520,12 @@ def main() -> int:
         else:
             print(f"Falta {source}", file=sys.stderr)
             return 1
+
+    # Diagrama del Reto 1 (modelo de datos). Opcional: si no existe, no rompe
+    # el renderizado de los diagramas del Reto 3.
+    er_source = base / "er-reto1.drawio"
+    if er_source.exists():
+        render(er_source, base / "er-reto1.png")
     return 0
 
 

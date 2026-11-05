@@ -70,7 +70,10 @@ corporativo se apaga con `ENABLE_DEMO_TOKEN=false` y los tokens los emite el IdP
 1. **El negocio vive en la base de datos, no en el código.** El mapeo del traductor de endosos se
    resuelve desde plantillas (`templates`, `template_fields`, `template_events`). Agregar un
    producto o un tipo de endoso es un `INSERT`, no un *deploy*. Es la diferencia entre resolver el
-   caso de hoy y resolver el siguiente.
+   caso de hoy y resolver el siguiente. No hace falta creerme: la pestaña del Reto 1 muestra la
+   plantilla aplicada (campos, origen de cada valor y eventos) y su selector se puebla desde
+   `GET /v1/templates`, así que la lista de productos tampoco está escrita en el frontend. Debajo
+   está el diagrama ER con las cinco tablas reales — las mismas que lee el traductor.
 2. **Grafo no dirigido y errores tipados.** El grafo se normaliza en ambos sentidos, Dijkstra corre
    sobre `container/heap` y cada base se evalúa de forma independiente. Distingo *nodo inexistente*
    (`NODE_NOT_FOUND`) de *inalcanzable* (`UNREACHABLE`) porque son incidentes distintos para quien
