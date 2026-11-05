@@ -102,11 +102,21 @@ STATE_FILE="${STATE_FILE:-$REPO_ROOT/.deploy-state.env}"
 
 # --- Utilidades --------------------------------------------------------------
 log()  { printf '\n== %s ==\n' "$*"; }
+ok()   { printf 'OK: %s\n' "$*"; }
 warn() { printf 'AVISO: %s\n' "$*" >&2; }
 die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 require_gcloud() {
   command -v gcloud >/dev/null 2>&1 || die "gcloud no está instalado o no está en PATH"
+}
+
+# Blindaje no-interactivo. Dentro de un script stdin no es un TTY: si gcloud se
+# quedara pidiendo confirmación, el proceso se colgaría esperando input que
+# nunca llega (es exactamente el cuelgue observado en `preflight`). Se desactivan
+# los prompts de forma global y además cada invocación lleva `--quiet`.
+disable_prompts() {
+  command -v gcloud >/dev/null 2>&1 || return 0
+  gcloud config set core/disable_prompts true --quiet 2>/dev/null || true
 }
 
 require_common() {
@@ -149,12 +159,18 @@ cmd_preflight() {
   require_common
   log "preflight: proyecto $PROJECT_ID, región $REGION"
 
+  # Comando estable (sin `beta`) + `--quiet` + timeout portable: nunca debe poder
+  # colgarse ni bloquear el script. Si la consulta falla o expira se reporta como
+  # aviso, no como error: el operador ya confirmó billingEnabled=True a mano y un
+  # permiso o red ausente no debe abortar el resto del preflight.
   local billing
-  billing="$(gcloud beta billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' 2>/dev/null || true)"
-  if [ "$billing" != "True" ] && [ "$billing" != "true" ]; then
-    die "el proyecto $PROJECT_ID no tiene billing habilitado (o no se pudo consultar). Habilítalo antes de continuar."
+  if command -v timeout >/dev/null 2>&1; then
+    billing="$(timeout 20 gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' --quiet 2>/dev/null || echo 'UNKNOWN')"
+  else
+    billing="$(perl -e 'alarm 20; exec @ARGV' -- gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' --quiet 2>/dev/null || echo 'UNKNOWN')"
   fi
-  echo "billing habilitado: $billing"
+  [[ "$billing" == "True" ]] && ok "billingEnabled=True" \
+    || warn "billingEnabled=$billing (no verificable por script; confírmalo a mano)"
 
   local apis=(
     run.googleapis.com
@@ -166,7 +182,7 @@ cmd_preflight() {
   gcloud services enable "${apis[@]}" --project "$PROJECT_ID" --quiet
   local api
   for api in "${apis[@]}"; do
-    if ! gcloud services list --enabled --project "$PROJECT_ID" \
+    if ! gcloud services list --enabled --project "$PROJECT_ID" --quiet \
       --filter="config.name=$api" --format='value(config.name)' | grep -q "$api"; then
       die "no se pudo confirmar que $api está habilitada"
     fi
@@ -292,9 +308,9 @@ cmd_deploy_backends() {
     --quiet
 
   URL_ENDORSEMENTS="$(gcloud run services describe "$SERVICE_ENDORSEMENTS" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')"
+    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet)"
   URL_ROUTES="$(gcloud run services describe "$SERVICE_ROUTES" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')"
+    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet)"
   [ -n "$URL_ENDORSEMENTS" ] || die "no se pudo obtener la URL de $SERVICE_ENDORSEMENTS"
   [ -n "$URL_ROUTES" ] || die "no se pudo obtener la URL de $SERVICE_ROUTES"
   write_state
@@ -327,7 +343,7 @@ cmd_deploy_frontend() {
     --quiet
 
   URL_FRONTEND="$(gcloud run services describe "$SERVICE_FRONTEND" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')"
+    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet)"
   [ -n "$URL_FRONTEND" ] || die "no se pudo obtener la URL de $SERVICE_FRONTEND"
   write_state
   echo "URL frontend: $URL_FRONTEND"
@@ -367,11 +383,11 @@ cmd_urls() {
   require_common
   local e r f
   e="$(gcloud run services describe "$SERVICE_ENDORSEMENTS" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' 2>/dev/null || true)"
+    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet 2>/dev/null || true)"
   r="$(gcloud run services describe "$SERVICE_ROUTES" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' 2>/dev/null || true)"
+    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet 2>/dev/null || true)"
   f="$(gcloud run services describe "$SERVICE_FRONTEND" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' 2>/dev/null || true)"
+    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet 2>/dev/null || true)"
 
   echo "endorsements: ${e:-<no desplegado>}"
   echo "routes:       ${r:-<no desplegado>}"
@@ -390,7 +406,7 @@ cmd_logs() {
   require_common
   local service="${1:-$SERVICE_ENDORSEMENTS}"
   gcloud run services logs read "$service" \
-    --project "$PROJECT_ID" --region "$REGION" --limit=50
+    --project "$PROJECT_ID" --region "$REGION" --limit=50 --quiet
 }
 
 # Orden definitivo: preflight → ensure-ar → bootstrap-db → build → deploy →
@@ -433,6 +449,8 @@ USAGE
 
 main() {
   local command="${1:-}"
+  # Primero de todo: gcloud nunca debe esperar input interactivo.
+  disable_prompts
   case "$command" in
     preflight)      cmd_preflight ;;
     ensure-ar)      cmd_ensure_ar ;;
