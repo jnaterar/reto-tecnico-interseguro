@@ -19,7 +19,13 @@ import (
 
 func main() {
 	port := getEnv("PORT", "8081")
-	secret := getEnv("JWT_SECRET", "dev-secret-change-me-please")
+	// Sin fallback silencioso: un secreto por defecto compartido en todas las
+	// réplicas de Cloud Run permitiría forjar tokens. Si falta, el proceso
+	// termina antes de aceptar tráfico.
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		log.Fatal("JWT_SECRET es obligatorio (mínimo 16 caracteres); defínelo en el entorno o inyéctalo desde Secret Manager")
+	}
 	ttlMinutes := getEnvInt("JWT_TTL_MINUTES", 60)
 	enableDemoToken := getEnv("ENABLE_DEMO_TOKEN", "true") == "true"
 	allowedOrigin := getEnv("CORS_ORIGIN", "*")

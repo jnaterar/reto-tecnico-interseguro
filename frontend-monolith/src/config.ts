@@ -6,8 +6,12 @@
 //
 // Los nombres siguen el contrato pedido: VITE_API_ENDORSEMENTS_URL y
 // VITE_API_ROUTES_URL.
-const readBase = (value: string | undefined, fallback: string): string =>
-  value && value.trim().length > 0 ? value.trim() : fallback;
+const readBase = (value: string | undefined, fallback: string): string => {
+  const raw = value && value.trim().length > 0 ? value.trim() : fallback;
+  // Cloud Run entrega URLs sin '/' final; un valor pegado a mano sí puede
+  // incluirlo y generar '//v1/...'. Normalizar aquí mantiene el contrato.
+  return raw.replace(/\/+$/, '');
+};
 
 export const ENDORSE_API_BASE = readBase(import.meta.env.VITE_API_ENDORSEMENTS_URL, '/endorse-api');
 export const ROUTES_API_BASE = readBase(import.meta.env.VITE_API_ROUTES_URL, '/routes-api');
