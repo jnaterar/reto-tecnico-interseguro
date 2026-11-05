@@ -112,6 +112,15 @@ export async function authorizedPost<T>(base: string, path: string, payload: unk
   });
 }
 
+/** GET autenticado con Bearer token (mismo cache de token que el POST). */
+export async function authorizedGet<T>(base: string, path: string): Promise<T> {
+  const token = await getDemoToken(base);
+  return requestJson<T>(base, path, {
+    method: 'GET',
+    headers: { authorization: `Bearer ${token}` },
+  });
+}
+
 export interface HealthStatus {
   ok: boolean;
   detail: string;

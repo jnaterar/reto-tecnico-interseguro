@@ -757,6 +757,209 @@ p {
   }
 }
 
+/* ==========================================================================
+   RETO 1 — PLANTILLA APLICADA Y MODELO DE DATOS
+   Paneles apilados a ancho completo. NO son hijos de .panel-grid para no
+   heredar la altura fija de arriba (se preserva el comportamiento de 7d4334e).
+   ========================================================================== */
+
+.endorse-stack {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(16px, 2vw, 32px);
+}
+
+.template-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.field-select {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.template-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.template-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.template-table thead th {
+  text-align: left;
+  padding: 10px 12px;
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.template-table tbody td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.template-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.template-table tbody tr:nth-child(even) {
+  background: rgba(241, 245, 249, 0.55);
+}
+
+.template-order {
+  width: 48px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+
+.template-value {
+  font-family: var(--mono);
+  word-break: break-word;
+}
+
+.endorse-template-card code,
+.endorse-er-card code {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-muted);
+  font-family: var(--mono);
+  font-size: 0.82em;
+}
+
+.origin-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.origin-input {
+  background: #e0edff;
+  border-color: #b9d3fb;
+  color: #173aa3;
+}
+
+.origin-constant {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.origin-default {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.template-events {
+  margin-top: 18px;
+}
+
+.template-events h3 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.template-events ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.template-events li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.template-events p {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.endorse-er-figure {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  overflow: hidden;
+  cursor: zoom-in;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.endorse-er-figure:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.endorse-er-figure:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.endorse-er-image {
+  display: block;
+  width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  background: #ffffff;
+}
+
+.endorse-er-figure .diagram-caption {
+  align-items: center;
+  padding: 10px 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .template-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .template-table {
+    font-size: 0.8rem;
+  }
+
+  .endorse-er-image {
+    max-height: 320px;
+  }
+}
+
 .card-header {
   display: flex;
   align-items: flex-start;

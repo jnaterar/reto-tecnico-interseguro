@@ -51,6 +51,44 @@ export interface CoreEndorsePayload {
   participationEntities: unknown[];
 }
 
+/** Origen del valor de un campo, tal como se guarda en `template_fields`. */
+export type TemplateFieldSource = 'INPUT' | 'CONSTANT' | 'DEFAULT';
+
+export interface TemplateFieldDefinition {
+  label: string;
+  order: number;
+  source: TemplateFieldSource;
+  sourceKey: string | null;
+  constantValue: string | null;
+  defaultValue: string | null;
+}
+
+export interface TemplateEventDefinition {
+  description: string;
+  orderEvent: number;
+}
+
+/** Plantilla activa devuelta por `GET /v1/templates/{producto}/{tipoEndoso}`. */
+export interface EndorseTemplate {
+  templateId: number;
+  version: number;
+  productCode: string;
+  productName: string;
+  endorsementTypeCode: string;
+  endorsementTypeName: string;
+  fields: TemplateFieldDefinition[];
+  events: TemplateEventDefinition[];
+}
+
+/** Entrada del catálogo devuelto por `GET /v1/templates`. */
+export interface TemplateCatalogItem {
+  productCode: string;
+  productName: string;
+  endorsementTypeCode: string;
+  endorsementTypeName: string;
+  fieldCount: number;
+}
+
 export type Graph = Record<string, Record<string, number>>;
 
 export interface OptimalRouteRequest {
