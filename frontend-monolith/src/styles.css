@@ -40,7 +40,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 body {
@@ -143,6 +143,11 @@ p {
   flex-direction: column;
 }
 
+.main-content-flow {
+  flex: 1 0 auto;
+  width: 100%;
+}
+
 /* ==========================================================================
    1. NAVBAR STICKY CON GLASSMORPHISM
    ========================================================================== */
@@ -202,49 +207,208 @@ p {
   font-size: 0.88rem;
 }
 
-.nav-demo-chip {
+/* ==========================================================================
+   POPOVER DE ESTADO DE SERVICIOS CLOUD RUN
+   ========================================================================== */
+
+.services-status-wrapper {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+}
+
+.services-status-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
   border-radius: 999px;
-  background: var(--surface-muted);
-  border: 1px solid var(--border);
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  color: var(--text-muted);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 
-.nav-health-indicator {
-  display: inline-flex;
-  align-items: center;
+.services-status-trigger:hover {
+  border-color: #b9c8e4;
+  background: var(--surface-muted);
 }
 
-.health-dot {
+.services-status-trigger:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.status-dot-pulse {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #aab4c4;
+  flex-shrink: 0;
 }
 
-.health-ok .health-dot {
+.dot-ok {
   background: var(--accent);
-  box-shadow: 0 0 0 2px rgba(15, 157, 118, 0.2);
+  box-shadow: 0 0 0 2px rgba(15, 157, 118, 0.25);
 }
 
-.health-down .health-dot {
+.dot-down {
   background: var(--danger);
-  box-shadow: 0 0 0 2px rgba(192, 40, 60, 0.2);
+  box-shadow: 0 0 0 2px rgba(192, 40, 60, 0.25);
 }
 
-.health-unknown .health-dot {
+.dot-unknown {
   background: var(--warning);
+  box-shadow: 0 0 0 2px rgba(183, 121, 31, 0.25);
+}
+
+.status-trigger-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.status-badge-text {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.badge-ok {
+  background: var(--success-bg);
+  color: #065f46;
+  border: 1px solid var(--success-border);
+}
+
+.badge-down {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid #fecaca;
+}
+
+.badge-unknown {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+}
+
+.services-status-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 310px;
+  max-width: 380px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 16px;
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.status-popover-header {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.status-popover-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.status-services-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.status-service-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  border: 1px solid #edf2f7;
+}
+
+.status-service-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.service-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.service-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.service-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.service-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.service-status-pill {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.status-popover-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  text-align: right;
+}
+
+.status-popover-footer kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 0.7rem;
+  font-family: var(--mono);
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  color: #334155;
 }
 
 .nav-links-wrap {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
 }
 
 .nav-link {
@@ -252,7 +416,7 @@ p {
   text-decoration: none;
   font-size: 0.9rem;
   font-weight: 600;
-  padding: 6px 10px;
+  padding: 6px 12px;
   border-radius: var(--radius-sm);
   transition: color 0.15s ease, background 0.15s ease;
 }
@@ -260,6 +424,13 @@ p {
 .nav-link:hover {
   color: var(--primary);
   background: var(--primary-tint);
+}
+
+.nav-link.is-active,
+.nav-link.active {
+  color: var(--primary);
+  background: var(--primary-tint);
+  font-weight: 700;
 }
 
 .nav-cta-button {
@@ -273,12 +444,19 @@ p {
   font-size: 0.88rem;
   font-weight: 700;
   text-decoration: none;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .nav-cta-button:hover {
   background: var(--primary-dark);
   transform: translateY(-1px);
+}
+
+.nav-cta-button.is-active,
+.nav-cta-button.active {
+  background: var(--primary-dark);
+  color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(31, 79, 216, 0.28);
 }
 
 .cta-star {
@@ -420,6 +598,116 @@ p {
 .stat-hint {
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+/* ==========================================================================
+   PÁGINAS DE RETOS, DOCUMENTACIÓN Y PERFIL
+   ========================================================================== */
+
+.page-retos-container,
+.page-doc-container,
+.page-profile-container {
+  padding: clamp(24px, 4vh, 48px) 0 clamp(48px, 6vh, 80px);
+}
+
+.challenges-page-header,
+.doc-page-header,
+.profile-page-header {
+  margin-bottom: 28px;
+}
+
+.challenges-main-title,
+.doc-main-title,
+.profile-main-title {
+  font-size: clamp(1.8rem, 3.2vw, 2.6rem);
+  line-height: 1.2;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+/* Bloque secundario de apoyo DEBAJO de los retos (h3 en gris medio) */
+.secondary-architecture-block {
+  margin-top: clamp(48px, 7vh, 72px);
+  padding: clamp(24px, 4vw, 36px);
+  border-radius: var(--radius);
+  background: #ffffff;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.secondary-arch-header {
+  margin-bottom: 24px;
+  max-width: 900px;
+}
+
+.secondary-arch-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.secondary-arch-title {
+  font-size: clamp(1.1rem, 1.4vw, 1.3rem);
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.secondary-arch-desc {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.secondary-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.secondary-stat-card {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.secondary-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.secondary-stat-card .stat-number {
+  font-size: clamp(1.6rem, 2.2vw, 2rem);
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1.1;
+  margin-bottom: 6px;
+}
+
+.secondary-stat-card .stat-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+
+.secondary-stat-card .stat-hint {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 /* ==========================================================================
@@ -840,6 +1128,55 @@ select:focus {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #93a4c4;
+}
+
+/* ==========================================================================
+   BOTÓN DE COPIAR PARA BLOQUES DE CÓDIGO OSCUROS (JsonBlock, Snippets)
+   ========================================================================== */
+
+.code-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: var(--mono);
+  cursor: pointer;
+  color: #f8fafc;
+  background: #334155;
+  border: 1px solid #475569;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.code-copy-button:hover:not(:disabled) {
+  background: #475569;
+  border-color: #64748b;
+  color: #ffffff;
+}
+
+.code-copy-button:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+.code-copy-button:active:not(:disabled) {
+  background: #1e293b;
+  transform: translateY(1px);
+}
+
+.code-copy-button.is-copied,
+button.code-copy-button.is-copied,
+.code-copy-button.is-copied:hover,
+.code-copy-button.is-copied:focus,
+.code-copy-button.is-copied:active {
+  background: #065f46 !important;
+  background-color: #065f46 !important;
+  border-color: #059669 !important;
+  color: #ecfdf5 !important;
+  transition: none !important;
 }
 
 .json-block-head .ghost-button {
@@ -1845,6 +2182,11 @@ select:focus {
     gap: 12px;
   }
 
+  .secondary-stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
   .panel-grid {
     grid-template-columns: 1fr;
   }
@@ -1892,6 +2234,13 @@ select:focus {
 }
 
 @media (max-width: 520px) {
+  .services-status-popover {
+    left: auto;
+    right: 0;
+    min-width: 280px;
+    max-width: calc(100vw - 32px);
+  }
+
   .tab {
     flex: 1 1 calc(50% - 8px);
     min-width: 140px;

@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react';
+import { NavLink } from 'react-router-dom';
 
 export function Footer(): ReactElement {
   return (
@@ -17,27 +18,36 @@ export function Footer(): ReactElement {
           <div className="footer-col">
             <span className="footer-col-title">Navegación</span>
             <ul className="footer-links-list">
-              <li><a href="#inicio">Inicio</a></li>
-              <li><a href="#retos">Retos Técnicos ⭐</a></li>
-              <li><a href="#documentacion">Documentación &amp; Stack</a></li>
-              <li><a href="#perfil">Sobre el autor</a></li>
+              <li>
+                <NavLink to="/retos">Retos Técnicos</NavLink>
+              </li>
+              <li>
+                <NavLink to="/documentacion">Documentación &amp; Stack</NavLink>
+              </li>
+              <li>
+                <NavLink to="/perfil">Sobre el autor</NavLink>
+              </li>
             </ul>
           </div>
 
           {/* Columna C: Contacto */}
           <div className="footer-col">
-            <span className="footer-col-title">Contacto &amp; Redes</span>
+            <span className="footer-col-title">Contacto</span>
             <ul className="footer-links-list">
               <li>
                 <a href="mailto:jhonder.natera@gmail.com">jhonder.natera@gmail.com</a>
               </li>
               <li>
-                <a href="https://linkedin.com/in/jhondernatera" target="_blank" rel="noopener noreferrer">
-                  LinkedIn: jhondernatera
+                <a
+                  href="https://linkedin.com/in/jhondernatera"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  linkedin.com/in/jhondernatera
                 </a>
               </li>
               <li>
-                <span className="muted small">Lima, Perú · Remoto / Híbrido</span>
+                <span className="muted small">Perú · Remoto / Híbrido</span>
               </li>
             </ul>
           </div>

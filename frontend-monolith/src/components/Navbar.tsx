@@ -1,22 +1,9 @@
 import { useEffect, useState, type ReactElement } from 'react';
-import type { HealthStatus } from '../api/http';
+import { NavLink } from 'react-router-dom';
+import { ServicesStatusPopover, type HealthMap } from './ServicesStatusPopover';
 
 interface NavbarProps {
-  health: {
-    endorse: HealthStatus | null;
-    routes: HealthStatus | null;
-  };
-}
-
-function HealthDot({ status }: { status: HealthStatus | null }): ReactElement {
-  const state = status === null ? 'unknown' : status.ok ? 'ok' : 'down';
-  const text = status === null ? 'verificando' : status.detail;
-
-  return (
-    <span className={`nav-health-indicator health-${state}`} title={text}>
-      <span className="health-dot" aria-hidden="true" />
-    </span>
-  );
+  health: HealthMap;
 }
 
 export function Navbar({ health }: NavbarProps): ReactElement {
@@ -25,7 +12,7 @@ export function Navbar({ health }: NavbarProps): ReactElement {
 
   useEffect(() => {
     const handleScroll = (): void => {
-      setIsScrolled(window.scrollY > 16);
+      setIsScrolled(window.scrollY > 12);
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -36,29 +23,21 @@ export function Navbar({ health }: NavbarProps): ReactElement {
     setIsMenuOpen(false);
   };
 
-  const isAllHealthy = health.endorse?.ok && health.routes?.ok;
-
   return (
     <header className={`site-navbar ${isScrolled ? 'is-scrolled' : ''}`}>
       <div className="nav-container page-wrap">
-        {/* Brand & Active Demo Badge */}
+        {/* Marca del proyecto e indicador de estado de servicios */}
         <div className="nav-brand-group">
-          <a href="#inicio" className="nav-brand-link" onClick={closeMenu}>
+          <NavLink to="/retos" className="nav-brand-link" onClick={closeMenu}>
             <span className="nav-brand-title">Reto Técnico</span>
             <span className="nav-brand-sep" aria-hidden="true">·</span>
             <span className="nav-brand-sub">Software Architecture</span>
-          </a>
+          </NavLink>
 
-          <div className="nav-demo-chip" title="Estado de los servicios en Cloud Run">
-            <HealthDot status={health.endorse} />
-            <HealthDot status={health.routes} />
-            <span className="nav-demo-text">
-              {isAllHealthy ? 'Demo activa' : 'Verificando'}
-            </span>
-          </div>
+          <ServicesStatusPopover health={health} />
         </div>
 
-        {/* Mobile menu toggle button */}
+        {/* Botón de menú móvil (hamburguesa accesible) */}
         <button
           type="button"
           className="nav-hamburger-button"
@@ -72,24 +51,41 @@ export function Navbar({ health }: NavbarProps): ReactElement {
           <span className={`hamburger-bar ${isMenuOpen ? 'is-open' : ''}`} />
         </button>
 
-        {/* Desktop & Mobile Navigation Links */}
+        {/* Navegación por rutas SPA */}
         <nav
           id="primary-nav-menu"
           className={`nav-links-wrap ${isMenuOpen ? 'is-open' : ''}`}
           aria-label="Navegación principal"
         >
-          <a href="#inicio" className="nav-link" onClick={closeMenu}>
-            Inicio
-          </a>
-          <a href="#documentacion" className="nav-link" onClick={closeMenu}>
+          <NavLink
+            to="/retos"
+            className={({ isActive }) =>
+              `nav-link nav-cta-button ${isActive ? 'is-active' : ''}`
+            }
+            onClick={closeMenu}
+          >
+            Retos Técnicos
+          </NavLink>
+
+          <NavLink
+            to="/documentacion"
+            className={({ isActive }) =>
+              `nav-link ${isActive ? 'is-active' : ''}`
+            }
+            onClick={closeMenu}
+          >
             Documentación
-          </a>
-          <a href="#perfil" className="nav-link" onClick={closeMenu}>
+          </NavLink>
+
+          <NavLink
+            to="/perfil"
+            className={({ isActive }) =>
+              `nav-link ${isActive ? 'is-active' : ''}`
+            }
+            onClick={closeMenu}
+          >
             Perfil
-          </a>
-          <a href="#retos" className="nav-cta-button" onClick={closeMenu}>
-            Retos Técnicos <span className="cta-star" aria-hidden="true">⭐</span>
-          </a>
+          </NavLink>
         </nav>
       </div>
     </header>

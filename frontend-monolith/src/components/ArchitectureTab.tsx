@@ -88,7 +88,7 @@ export function ArchitectureTab(): ReactElement {
         <h3 className="section-subtitle">Pilares de la solución propuesta</h3>
         <div className="arch-pillars-grid">
           <div className="arch-pillar-card">
-            <div className="pillar-icon" aria-hidden="true">⚡</div>
+            <span className="pillar-num">01</span>
             <h4>Escalabilidad</h4>
             <p className="muted">
               Diseño completamente stateless + colas de mensajería en Google Cloud Pub/Sub + workers en Cloud Run con autoscaling horizontal según demanda.
@@ -96,7 +96,7 @@ export function ArchitectureTab(): ReactElement {
           </div>
 
           <div className="arch-pillar-card">
-            <div className="pillar-icon" aria-hidden="true">🛡️</div>
+            <span className="pillar-num">02</span>
             <h4>Resiliencia y reintentos</h4>
             <p className="muted">
               Patrón Circuit Breaker, reintentos con backoff exponencial + jitter aleatorio, Dead Letter Queue (DLQ) para alertas y job de reconciliación automática.
@@ -104,7 +104,7 @@ export function ArchitectureTab(): ReactElement {
           </div>
 
           <div className="arch-pillar-card">
-            <div className="pillar-icon" aria-hidden="true">🔒</div>
+            <span className="pillar-num">03</span>
             <h4>Control de concurrencia</h4>
             <p className="muted">
               Idempotencia estricta (restricción <code>UNIQUE</code> en base de datos sobre <code>Idempotency-Key</code>) y Policy Lock distribuido en Redis para serializar intentos sobre la misma póliza.
@@ -112,7 +112,7 @@ export function ArchitectureTab(): ReactElement {
           </div>
 
           <div className="arch-pillar-card">
-            <div className="pillar-icon" aria-hidden="true">💼</div>
+            <span className="pillar-num">04</span>
             <h4>Seguridad y Costo</h4>
             <p className="muted">
               Canal mTLS hacia INARI, validación JWT en el gateway perimetral, gestión de secretos en Google Cloud KMS, y costo optimizado mediante arquitectura serverless en capa gratuita/pago por uso.
@@ -137,7 +137,7 @@ export function ArchitectureTab(): ReactElement {
                 alt="Diagrama AS-IS: Flujo sincrónico con duplicidad por timeout de proxy"
                 className="diagram-thumb"
               />
-              <span className="diagram-zoom-badge" aria-hidden="true">🔍 Ampliar</span>
+              <span className="diagram-zoom-badge">Ampliar diagrama</span>
             </div>
             <figcaption className="diagram-caption">
               <strong>AS-IS — Flujo sincrónico con duplicidad</strong>
@@ -153,7 +153,7 @@ export function ArchitectureTab(): ReactElement {
                 alt="Diagrama TO-BE: Flujo asíncrono e idempotente con Pub/Sub y Policy Lock"
                 className="diagram-thumb"
               />
-              <span className="diagram-zoom-badge" aria-hidden="true">🔍 Ampliar</span>
+              <span className="diagram-zoom-badge">Ampliar diagrama</span>
             </div>
             <figcaption className="diagram-caption">
               <strong>TO-BE — Flujo asíncrono e idempotente</strong>
