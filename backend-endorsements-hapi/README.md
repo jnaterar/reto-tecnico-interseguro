@@ -166,6 +166,8 @@ Qué hace exactamente:
 | `GET` | `/health` | No | Healthcheck |
 | `POST` | `/v1/auth/token` | No | Emite JWT de demo (`ENABLE_DEMO_TOKEN=true`) |
 | `POST` | `/v1/endorse/translate` | **JWT** | Traduce el endoso |
+| `GET` | `/v1/templates` | **JWT** | Catálogo de plantillas activas (alimenta el selector del frontend) |
+| `GET` | `/v1/templates/{producto}/{tipoEndoso}` | **JWT** | Plantilla aplicada: campos, origen de cada valor y eventos |
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8082/v1/auth/token \
@@ -182,6 +184,20 @@ curl -s -X POST http://localhost:8082/v1/endorse/translate \
 ```
 
 La respuesta incluye la cabecera `x-api-version: v1`.
+
+Los dos endpoints de plantillas son de **solo lectura** y reutilizan el scope
+`endorse:translate` a propósito: el token de demo tiene alcance cerrado y no se
+amplía la superficie de autenticación por una consulta de catálogo.
+
+```bash
+# Catálogo: la lista de productos del selector sale de la BD, no del frontend.
+curl -s http://localhost:8082/v1/templates \
+  -H "authorization: Bearer $TOKEN" | jq
+
+# Plantilla concreta (acepta el nombre visible o el código).
+curl -s http://localhost:8082/v1/templates/AUTO/CambioFrecuencia \
+  -H "authorization: Bearer $TOKEN" | jq '.fields | length'   # 7
+```
 
 ---
 
@@ -223,6 +239,11 @@ El seed incluye un segundo producto (`AUTO`) precisamente para demostrar que la
 extensibilidad es real; el test `service.test.ts` lo verifica con un repositorio
 en memoria.
 
+Como `GET /v1/templates` lee de `templates`, la plantilla nueva aparece sola en el
+selector del frontend: la lista de productos **no** está escrita a mano en la
+interfaz. El diagrama [`architecture-drawio/er-reto1.drawio`](../architecture-drawio/er-reto1.drawio)
+modela estas cinco tablas con sus columnas reales.
+
 ---
 
 ## 5. Capas
@@ -231,7 +252,9 @@ en memoria.
 |---|---|---|
 | Routes | [`src/routes/index.ts`](src/routes/index.ts) | Contrato HTTP + validación Joi |
 | Controller | [`src/controllers/endorse.controller.ts`](src/controllers/endorse.controller.ts) | Adapta request/response |
+| Controller (plantillas) | [`src/controllers/template.controller.ts`](src/controllers/template.controller.ts) | Catálogo y plantilla aplicada (solo lectura) |
 | Service | [`src/services/endorse.service.ts`](src/services/endorse.service.ts) | Orquesta: busca plantilla y traduce |
+| Service (plantillas) | [`src/services/template.service.ts`](src/services/template.service.ts) | Casos de uso de lectura sobre el mismo puerto |
 | Repository (puerto) | [`src/repositories/template.repository.ts`](src/repositories/template.repository.ts) | Interfaz de acceso a plantillas |
 | Repository (adaptador) | [`src/repositories/typeorm-template.repository.ts`](src/repositories/typeorm-template.repository.ts) | SQL/TypeORM |
 | Entity (dominio/DTO) | [`src/entities/`](src/entities) | Tipos del contrato |

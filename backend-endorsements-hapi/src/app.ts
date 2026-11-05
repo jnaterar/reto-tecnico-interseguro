@@ -2,10 +2,12 @@ import * as Boom from '@hapi/boom';
 import { server as createHapiServer, type Server } from '@hapi/hapi';
 import { AuthController } from './controllers/auth.controller';
 import { EndorseController } from './controllers/endorse.controller';
+import { TemplateController } from './controllers/template.controller';
 import { AppError } from './errors/app-error';
 import { authPlugin } from './plugins/auth.plugin';
 import { buildRoutes } from './routes';
 import { EndorseService } from './services/endorse.service';
+import { TemplateService } from './services/template.service';
 import type { TemplateRepository } from './repositories/template.repository';
 
 export interface ServerDependencies {
@@ -59,13 +61,17 @@ export async function buildServer(deps: ServerDependencies): Promise<Server> {
 
   const endorseService = new EndorseService(deps.templateRepository);
   const endorseController = new EndorseController(endorseService);
+  // El servicio de plantillas comparte el mismo puerto de repositorio: los
+  // endpoints de lectura y la traducción ven exactamente los mismos datos.
+  const templateService = new TemplateService(deps.templateRepository);
+  const templateController = new TemplateController(templateService);
   const authController = new AuthController(
     deps.jwtSecret,
     deps.jwtTtlSeconds,
     deps.enableDemoToken,
   );
 
-  server.route(buildRoutes({ endorseController, authController }));
+  server.route(buildRoutes({ endorseController, authController, templateController }));
 
   // Códigos de dominio por status HTTP: el cliente no debe depender de los
   // nombres internos de Boom ("Bad Request", "Unauthorized").

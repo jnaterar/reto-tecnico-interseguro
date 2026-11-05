@@ -3,10 +3,12 @@ import Joi from 'joi';
 import type { Lifecycle, ServerRoute } from '@hapi/hapi';
 import type { AuthController } from '../controllers/auth.controller';
 import type { EndorseController } from '../controllers/endorse.controller';
+import type { TemplateController } from '../controllers/template.controller';
 
 export interface RoutesDependencies {
   endorseController: EndorseController;
   authController: AuthController;
+  templateController: TemplateController;
 }
 
 const toIssues = (
@@ -113,6 +115,27 @@ export function buildRoutes(deps: RoutesDependencies): ServerRoute[] {
         },
       },
       handler: deps.endorseController.translate,
+    },
+    {
+      // Endpoints de solo lectura sobre las plantillas. Reutilizan el scope
+      // `endorse:translate` a propósito: el token de demo es de alcance
+      // cerrado y no se amplía la superficie de autenticación por esto.
+      method: 'GET',
+      path: '/v1/templates',
+      options: {
+        auth: { strategy: 'jwt', scope: ['endorse:translate'] },
+        tags: ['api', 'templates'],
+      },
+      handler: deps.templateController.listCatalog,
+    },
+    {
+      method: 'GET',
+      path: '/v1/templates/{producto}/{tipoEndoso}',
+      options: {
+        auth: { strategy: 'jwt', scope: ['endorse:translate'] },
+        tags: ['api', 'templates'],
+      },
+      handler: deps.templateController.getTemplate,
     },
   ];
 }

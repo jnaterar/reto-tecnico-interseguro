@@ -38,7 +38,9 @@ export function mapToCorePayload(
     idEnvio: request.idEnvio,
     financialPlansEntity: { description: request.frecuencia },
     currency: { description: request.moneda },
-    productEntity: { description: request.producto },
+    // El nombre canónico del producto lo dicta la plantilla en BD, no el texto
+    // que mandó el cliente: así "AUTO" y "Auto" se resuelven a un único valor.
+    productEntity: { description: template.productName },
     eventEntity: {
       description: primaryEvent.description,
       dynamicData,

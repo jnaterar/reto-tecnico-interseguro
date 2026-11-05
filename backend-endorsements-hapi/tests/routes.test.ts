@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildServer } from '../src/app';
 import { issueToken } from '../src/security/jwt';
 import {
+  autoTemplate,
   exampleRequest,
   expectedPayload,
   InMemoryTemplateRepository,
@@ -15,7 +16,7 @@ let server: Server;
 
 beforeAll(async () => {
   server = await buildServer({
-    templateRepository: new InMemoryTemplateRepository([rumboTemplate]),
+    templateRepository: new InMemoryTemplateRepository([rumboTemplate, autoTemplate]),
     jwtSecret: JWT_SECRET,
     jwtTtlSeconds: 3600,
     enableDemoToken: true,
@@ -144,6 +145,122 @@ describe('HTTP /v1/endorse/translate', () => {
     });
 
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('HTTP /v1/templates', () => {
+  it('exige JWT (401): el catálogo no se expone sin token', async () => {
+    const response = await server.inject({ method: 'GET', url: '/v1/templates' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('devuelve el catálogo desde el repositorio, con el nº de campos real', async () => {
+    const token = await getToken();
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/v1/templates',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const catalog = response.result as Array<{
+      productCode: string;
+      productName: string;
+      endorsementTypeCode: string;
+      fieldCount: number;
+    }>;
+
+    expect(catalog).toHaveLength(2);
+    expect(catalog).toEqual(
+      expect.arrayContaining([
+        {
+          productCode: 'RUMBO',
+          productName: 'Rumbo',
+          endorsementTypeCode: 'CAMBIO_FRECUENCIA',
+          endorsementTypeName: 'CambioFrecuencia',
+          fieldCount: 12,
+        },
+        {
+          productCode: 'AUTO',
+          productName: 'Auto',
+          endorsementTypeCode: 'CAMBIO_FRECUENCIA',
+          endorsementTypeName: 'CambioFrecuencia',
+          fieldCount: 7,
+        },
+      ]),
+    );
+  });
+
+  it('devuelve la plantilla Rumbo con sus 12 campos ordenados', async () => {
+    const token = await getToken();
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/v1/templates/Rumbo/CambioFrecuencia',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const template = response.result as typeof rumboTemplate;
+
+    expect(template.templateId).toBe(rumboTemplate.templateId);
+    expect(template.productName).toBe('Rumbo');
+    expect(template.fields).toHaveLength(12);
+    expect(template.fields.map((field) => field.label)).toEqual(
+      rumboTemplate.fields.map((field) => field.label),
+    );
+  });
+
+  it('devuelve la plantilla Auto con sus 7 campos (misma ruta, otro producto)', async () => {
+    const token = await getToken();
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/v1/templates/AUTO/CambioFrecuencia',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const template = response.result as typeof autoTemplate;
+
+    expect(template.productName).toBe('Auto');
+    expect(template.fields).toHaveLength(7);
+  });
+
+  it('devuelve TEMPLATE_NOT_FOUND (404) para una plantilla inexistente', async () => {
+    const token = await getToken();
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/v1/templates/Inexistente/CambioFrecuencia',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect((response.result as { error: { code: string } }).error.code).toBe('TEMPLATE_NOT_FOUND');
+  });
+
+  it('la traducción de Auto sale con 7 campos y el nombre canónico del producto', async () => {
+    const token = await getToken();
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/v1/endorse/translate',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ...exampleRequest, producto: 'AUTO' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const payload = response.result as typeof expectedPayload;
+
+    // El nombre viene de la plantilla ("Auto"), no del texto del cliente ("AUTO").
+    expect(payload.productEntity.description).toBe('Auto');
+    expect(payload.eventEntity.dynamicData).toHaveLength(7);
+    expect(payload.eventEntity.dynamicData.map((entry) => entry.etiqueta)).toEqual(
+      autoTemplate.fields.map((field) => field.label),
+    );
   });
 });
 

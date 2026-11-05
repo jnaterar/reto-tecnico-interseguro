@@ -41,6 +41,23 @@ export class TypeOrmTemplateRepository implements TemplateRepository {
     }
     return toDomain(template);
   }
+
+  async listTemplates(): Promise<EndorsementTemplate[]> {
+    const templates = await this.dataSource
+      .getRepository(TemplateModel)
+      .createQueryBuilder('template')
+      .innerJoinAndSelect('template.product', 'product')
+      .innerJoinAndSelect('template.endorsementType', 'endorsementType')
+      .leftJoinAndSelect('template.fields', 'field')
+      .leftJoinAndSelect('template.events', 'event')
+      .where('template.isActive = :isActive', { isActive: true })
+      .orderBy('product.name', 'ASC')
+      .addOrderBy('endorsementType.name', 'ASC')
+      .addOrderBy('template.version', 'DESC')
+      .getMany();
+
+    return templates.map((template) => toDomain(template));
+  }
 }
 
 function toDomain(model: TemplateModel): EndorsementTemplate {

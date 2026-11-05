@@ -46,6 +46,33 @@ export const rumboTemplate: EndorsementTemplate = {
   ],
 };
 
+/**
+ * Espejo exacto de AUTO_CAMBIO_FRECUENCIA del seed: misma estructura, menos
+ * campos. Sirve para probar que el catálogo y la traducción salen de la
+ * plantilla y no de una lista escrita a mano.
+ */
+export const autoTemplate: EndorsementTemplate = {
+  templateId: 2,
+  version: 1,
+  productCode: 'AUTO',
+  productName: 'Auto',
+  endorsementTypeCode: 'CAMBIO_FRECUENCIA',
+  endorsementTypeName: 'CambioFrecuencia',
+  fields: [
+    { label: 'ProductosVida', order: 1, source: 'INPUT', sourceKey: 'producto', constantValue: null, defaultValue: null },
+    { label: 'NombreUsuario', order: 2, source: 'INPUT', sourceKey: 'usuario', constantValue: null, defaultValue: null },
+    { label: 'NumeroPolizaEndoso', order: 3, source: 'INPUT', sourceKey: 'policyNumber', constantValue: null, defaultValue: null },
+    { label: 'TipoEndosoPol', order: 4, source: 'CONSTANT', sourceKey: null, constantValue: 'Endoso Simple', defaultValue: null },
+    { label: 'ResponsableAtencion', order: 5, source: 'CONSTANT', sourceKey: null, constantValue: 'SAC', defaultValue: null },
+    { label: 'InicioVigenciaEndoso', order: 6, source: 'DEFAULT', sourceKey: null, constantValue: null, defaultValue: 'Default' },
+    { label: 'FechaSolicitud', order: 7, source: 'INPUT', sourceKey: 'fechaSolicitud', constantValue: null, defaultValue: null },
+  ],
+  events: [
+    { description: 'SolicitarEndoso', orderEvent: 1 },
+    { description: 'AprobarEndoso', orderEvent: 2 },
+  ],
+};
+
 export const expectedPayload: CoreEndorsePayload = {
   policyNumber: '08200000049',
   idEnvio: 5984,
@@ -109,5 +136,9 @@ export class InMemoryTemplateRepository implements TemplateRepository {
       return productMatches && typeMatches;
     });
     return found ?? null;
+  }
+
+  async listTemplates(): Promise<EndorsementTemplate[]> {
+    return [...this.templates];
   }
 }

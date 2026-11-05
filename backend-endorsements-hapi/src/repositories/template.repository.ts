@@ -13,4 +13,11 @@ export interface TemplateRepository {
    * Acepta tanto nombre visible ("Rumbo") como código ("RUMBO").
    */
   findTemplate(product: string, endorsementType: string): Promise<EndorsementTemplate | null>;
+
+  /**
+   * Devuelve todas las plantillas activas de la base de datos.
+   * Alimenta el catálogo del frontend: la lista de productos disponibles
+   * nunca se escribe a mano, sale de `templates`.
+   */
+  listTemplates(): Promise<EndorsementTemplate[]>;
 }

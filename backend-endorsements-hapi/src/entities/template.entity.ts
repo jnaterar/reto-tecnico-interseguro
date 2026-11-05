@@ -38,3 +38,18 @@ export interface EndorsementTemplate {
   fields: TemplateFieldDefinition[];
   events: TemplateEventDefinition[];
 }
+
+/**
+ * Entrada del catálogo de plantillas.
+ *
+ * Es la vista mínima que consume el selector del frontend: se arma desde las
+ * filas de `templates` en BD, de modo que agregar un producto nuevo aparece
+ * en la interfaz sin recompilar el frontend (Open/Closed).
+ */
+export interface TemplateCatalogItem {
+  productCode: string;
+  productName: string;
+  endorsementTypeCode: string;
+  endorsementTypeName: string;
+  fieldCount: number;
+}
