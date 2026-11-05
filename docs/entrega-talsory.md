@@ -98,15 +98,21 @@ corporativo se apaga con `ENABLE_DEMO_TOKEN=false` y los tokens los emite el IdP
 El despliegue está **ejecutado y activo** en Cloud Run (`us-central1`): tres servicios
 (`frontend`, `endorsements` y `routes`) contra Neon Postgres como base administrada. El script
 `deploy-gcp.sh` queda como versión reproducible, por subcomandos y en este orden: `preflight`,
-`ensure-ar`, `bootstrap-db`, `build`, `deploy`, `urls` y `update-cors` (`./deploy-gcp.sh all` los
-encadena). Se acompaña del `cloudbuild-frontend.yaml` que inyecta las URLs del frontend en tiempo de
-build. El procedimiento exacto, con las variables que hay que exportar antes de ejecutarlo, está en
-la sección 8 del README.
+`ensure-ar`, `bootstrap-db`, `build`, `deploy`, `urls`, `update-cors` y `smoke` (`./deploy-gcp.sh all`
+los encadena). Para actualizar solo código sin volver a manejar secretos existe `redeploy`, que
+reutiliza la configuración de Cloud Run (env/CORS/límites) y termina igualmente en `smoke`. Se
+acompaña del `cloudbuild-frontend.yaml` que inyecta las URLs del frontend en tiempo de build. El
+procedimiento exacto, con las variables que hay que exportar antes de ejecutarlo, está en la sección
+8 del README.
 
 **Smoke verificado contra el despliegue activo:**
 
 - **Reto 1 —** `POST /v1/endorse/translate` → `200`; `eventEntity.description = "SolicitarEndoso"`
   con **12** entradas en `dynamicData`, preservando `'Default'` y `''` como valores distintos.
+- **Plantillas —** `GET /v1/templates` → `200` con **2** plantillas (`AUTO` y `RUMBO`) y
+  `fieldCount > 0`. `./deploy-gcp.sh smoke` exige exactamente eso y, antes, que la revisión que
+  sirve el 100% del tráfico sea la última creada: un 404 en producción se había diagnosticado como
+  contenedor stale, no como bug de código, y el smoke ahora lo detecta explícitamente.
 - **Reto 2 —** `POST /v1/routes/optimal` → `200`; respuesta `{fromDepot, to, path, distance: 7}`
   sobre el grafo **no dirigido** (accidente `San Isidro`, base `Miraflores`).
 - **CORS —** control positivo: el `Origin` del frontend recibe `Access-Control-Allow-Origin`;

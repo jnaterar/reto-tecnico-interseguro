@@ -14,11 +14,23 @@
 #   ./deploy-gcp.sh ensure-ar       # repositorio Artifact Registry
 #   ./deploy-gcp.sh bootstrap-db    # esquema + seed contra Neon (endpoint directo)
 #   ./deploy-gcp.sh build           # build+push endorsements y routes
-#   ./deploy-gcp.sh deploy          # Cloud Run: backends + frontend
+#   ./deploy-gcp.sh deploy          # Cloud Run: backends + frontend + smoke
+#   ./deploy-gcp.sh redeploy        # build + deploy de los 3 conservando config + smoke
+#   ./deploy-gcp.sh smoke           # EXIGE /v1/templates -> 200 con 2 plantillas
 #   ./deploy-gcp.sh urls            # imprime URLs públicas
 #   ./deploy-gcp.sh update-cors     # fija el origen exacto del frontend
 #   ./deploy-gcp.sh logs [servicio] # logs recientes (por defecto endorsements)
 #   ./deploy-gcp.sh all             # secuencia completa, en ese orden
+#
+# Smoke estricto (lección aprendida): un 404 de /v1/templates en producción no
+# era un bug de código, era un contenedor stale. `smoke` exige que la revisión
+# que sirve el 100% del tráfico sea la ÚLTIMA creada, que /health responda 200,
+# que /v1/templates devuelva 200 y que el catálogo tenga EXACTAMENTE 2
+# plantillas (AUTO y RUMBO). Si algo falla, termina con exit 1.
+#
+# `redeploy` reutiliza la configuración ya existente de Cloud Run (env vars,
+# CORS y límites) y solo cambia las imágenes: no necesita DB_*/JWT_SECRET en el
+# entorno. Es la vía segura para actualizar código sin volver a manejar secretos.
 #
 # Variables obligatorias (sin valores por defecto):
 #   DB_HOST_POOLED, DB_HOST_DIRECT, DB_NAME, DB_USER, DB_PASSWORD, JWT_SECRET
@@ -196,6 +208,46 @@ load_state() {
   return 0
 }
 
+# ¿Existe ya el servicio? Permite redesplegar código sin reinyectar secretos:
+# Cloud Run conserva env vars, CORS y límites si no se pasan flags de config.
+service_exists() {
+  local service="$1"
+  gcloud run services describe "$service" \
+    --project "$PROJECT_ID" --region "$REGION" >/dev/null 2>&1
+}
+
+# Variables mínimas para (re)configurar el backend. Si faltan pero el servicio
+# ya existe, se despliega solo la imagen y se conserva la configuración actual.
+deploy_env_available() {
+  [ -n "$DB_HOST_POOLED" ] && [ -n "$DB_NAME" ] && [ -n "$DB_USER" ] &&
+    [ -n "$DB_PASSWORD" ] && [ -n "$JWT_SECRET" ]
+}
+
+# Despliega una imagen conservando la configuración del servicio salvo que se
+# pida reemplazar el env completo (env_spec) o solo fijar CORS. Evita repetir
+# tres ramas casi idénticas de `gcloud run deploy`.
+deploy_image() {
+  local service="$1" image="$2" port="$3" env_spec="$4" delim="$5" cors="$6"
+  if [ -n "$env_spec" ]; then
+    gcloud run deploy "$service" \
+      --project "$PROJECT_ID" --region "$REGION" \
+      --image "$image" --port "$port" --allow-unauthenticated \
+      --max-instances "$MAX_INSTANCES" \
+      --set-env-vars "^${delim}^${env_spec}" --quiet
+  elif [ -n "$cors" ]; then
+    gcloud run deploy "$service" \
+      --project "$PROJECT_ID" --region "$REGION" \
+      --image "$image" --port "$port" --allow-unauthenticated \
+      --max-instances "$MAX_INSTANCES" \
+      --update-env-vars "CORS_ORIGINS=${cors}" --quiet
+  else
+    gcloud run deploy "$service" \
+      --project "$PROJECT_ID" --region "$REGION" \
+      --image "$image" --port "$port" --allow-unauthenticated \
+      --max-instances "$MAX_INSTANCES" --quiet
+  fi
+}
+
 # --- Subcomandos -------------------------------------------------------------
 cmd_preflight() {
   require_gcloud
@@ -309,46 +361,47 @@ cmd_build() {
 cmd_deploy_backends() {
   require_gcloud
   require_common
-  require_db
   log "deploy backends: $SERVICE_ENDORSEMENTS y $SERVICE_ROUTES"
 
   # Cloud Run inyecta PORT en runtime; `--port` solo declara cuál escuchar.
   # `--allow-unauthenticated` es intencional (ver cabecera): IAM bloquearía al
   # evaluador; la autorización real está en el JWT y el CORS de la app.
-  # Runtime con el endpoint POOLED y DB_SYNCHRONIZE=false: el esquema ya lo creó
-  # `bootstrap-db` contra el endpoint DIRECTO. Los secretos viajan en la misma
-  # lista (ver trade-off en la cabecera); el delimitador evita colisiones con el
-  # contenido de la contraseña o del JWT.
-  local d
-  d="$(pick_env_delimiter)" || die "no hay delimitador seguro para --set-env-vars; revisa que ningún valor contenga @ # | ; : %"
-  local endorsements_env="DB_HOST=${DB_HOST_POOLED}${d}DB_PORT=${DB_PORT}${d}DB_USER=${DB_USER}${d}DB_NAME=${DB_NAME}${d}DB_SSL=true${d}DB_SYNCHRONIZE=false${d}DB_LOGGING=false${d}JWT_TTL_SECONDS=${DEMO_TOKEN_TTL_SECONDS}${d}ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN}${d}JWT_SECRET=${JWT_SECRET}${d}DB_PASSWORD=${DB_PASSWORD}"
-  local routes_env="JWT_TTL_MINUTES=${DEMO_TOKEN_TTL_MINUTES}${d}ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN}${d}JWT_SECRET=${JWT_SECRET}"
-  if [ -n "$CORS_ORIGINS" ]; then
-    endorsements_env="${endorsements_env}${d}CORS_ORIGINS=${CORS_ORIGINS}"
-    routes_env="${routes_env}${d}CORS_ORIGINS=${CORS_ORIGINS}"
+  #
+  # Dos modos:
+  #   a) Hay DB_*/JWT_SECRET en el entorno -> se reemplaza el env completo
+  #      (primer deploy, rotación de secretos).
+  #   b) Faltan -> los servicios YA deben existir y solo se actualiza la
+  #      imagen: Cloud Run conserva env vars, CORS y límites. Así `redeploy`
+  #      actualiza código sin volver a manejar secretos.
+  local d="" endorsements_env="" routes_env=""
+  if deploy_env_available; then
+    # Runtime con el endpoint POOLED y DB_SYNCHRONIZE=false: el esquema ya lo
+    # creó `bootstrap-db` contra el endpoint DIRECTO. Los secretos viajan en la
+    # misma lista (ver trade-off en la cabecera); el delimitador evita
+    # colisiones con el contenido de la contraseña o del JWT.
+    d="$(pick_env_delimiter)" || die "no hay delimitador seguro para --set-env-vars; revisa que ningún valor contenga @ # | ; : %"
+    endorsements_env="DB_HOST=${DB_HOST_POOLED}${d}DB_PORT=${DB_PORT}${d}DB_USER=${DB_USER}${d}DB_NAME=${DB_NAME}${d}DB_SSL=true${d}DB_SYNCHRONIZE=false${d}DB_LOGGING=false${d}JWT_TTL_SECONDS=${DEMO_TOKEN_TTL_SECONDS}${d}ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN}${d}JWT_SECRET=${JWT_SECRET}${d}DB_PASSWORD=${DB_PASSWORD}"
+    routes_env="JWT_TTL_MINUTES=${DEMO_TOKEN_TTL_MINUTES}${d}ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN}${d}JWT_SECRET=${JWT_SECRET}"
+    if [ -n "$CORS_ORIGINS" ]; then
+      endorsements_env="${endorsements_env}${d}CORS_ORIGINS=${CORS_ORIGINS}"
+      routes_env="${routes_env}${d}CORS_ORIGINS=${CORS_ORIGINS}"
+    else
+      warn "CORS_ORIGINS vacío: los backends arrancarán sin CORS hasta ./deploy-gcp.sh update-cors"
+    fi
   else
-    warn "CORS_ORIGINS vacío: los backends arrancarán sin CORS hasta ./deploy-gcp.sh update-cors"
+    if ! service_exists "$SERVICE_ENDORSEMENTS" || ! service_exists "$SERVICE_ROUTES"; then
+      die "faltan DB_HOST_POOLED/DB_NAME/DB_USER/DB_PASSWORD/JWT_SECRET y algún backend no existe; define esas variables para el primer deploy"
+    fi
+    warn "sin variables DB_*/JWT_SECRET en el entorno: se conserva la configuración actual de Cloud Run y solo se actualiza la imagen"
+    if [ -n "$CORS_ORIGINS" ]; then
+      warn "CORS_ORIGINS se aplicará con --update-env-vars; el resto de variables no se toca"
+    fi
   fi
 
-  gcloud run deploy "$SERVICE_ENDORSEMENTS" \
-    --project "$PROJECT_ID" \
-    --region "$REGION" \
-    --image "$AR_HOST/$IMAGE_ENDORSEMENTS:$TAG" \
-    --port "$PORT_ENDORSEMENTS" \
-    --allow-unauthenticated \
-    --max-instances "$MAX_INSTANCES" \
-    --set-env-vars "^${d}^${endorsements_env}" \
-    --quiet
-
-  gcloud run deploy "$SERVICE_ROUTES" \
-    --project "$PROJECT_ID" \
-    --region "$REGION" \
-    --image "$AR_HOST/$IMAGE_ROUTES:$TAG" \
-    --port "$PORT_ROUTES" \
-    --allow-unauthenticated \
-    --max-instances "$MAX_INSTANCES" \
-    --set-env-vars "^${d}^${routes_env}" \
-    --quiet
+  deploy_image "$SERVICE_ENDORSEMENTS" "$AR_HOST/$IMAGE_ENDORSEMENTS:$TAG" \
+    "$PORT_ENDORSEMENTS" "$endorsements_env" "$d" "$CORS_ORIGINS"
+  deploy_image "$SERVICE_ROUTES" "$AR_HOST/$IMAGE_ROUTES:$TAG" \
+    "$PORT_ROUTES" "$routes_env" "$d" "$CORS_ORIGINS"
 
   # URL larga canónica, no la corta de status.url: es la que el navegador enviará
   # como Origin y la que debe coincidir con CORS_ORIGINS.
@@ -429,6 +482,152 @@ cmd_update_cors() {
   echo "    -H 'Origin: https://evil.example.com' -H 'Access-Control-Request-Method: POST'"
 }
 
+# --- Smoke de producción ------------------------------------------------------
+# Aborta con exit 1 ante CUALQUIER desviación: un rojo aquí significa que la UI
+# se vería rota en vivo. No hay "avisos" para el endpoint del reto.
+smoke_fail() {
+  printf 'SMOKE FAIL: %s\n' "$*" >&2
+  exit 1
+}
+
+# Exige:
+#   1. La revisión que sirve el 100% del tráfico == última revisión creada y
+#      lista (si no, es un contenedor stale: exactamente el 404 anterior).
+#   2. GET /health -> 200 (con reintentos durante el rollout).
+#   3. Token (SMOKE_TOKEN si está definido; si no, token demo) -> Bearer.
+#   4. GET /v1/templates -> 200, array JSON con EXACTAMENTE 2 plantillas
+#      (AUTO y RUMBO), todas con fieldCount > 0.
+#   5. Si el backend tiene CORS_ORIGINS configurado, el preflight del navegador
+#      para el frontend canónico devuelve ese mismo Access-Control-Allow-Origin.
+cmd_smoke() {
+  require_gcloud
+  require_common
+  command -v curl >/dev/null 2>&1 || die "curl es necesario para el smoke"
+  command -v jq >/dev/null 2>&1 || die "jq es necesario para validar el JSON del smoke"
+  command -v awk >/dev/null 2>&1 || die "awk es necesario para el smoke"
+
+  local base
+  base="$(canonical_url "$SERVICE_ENDORSEMENTS")"
+  base="${base%/}"
+  log "smoke: $base"
+
+  # 1) Contenedor stale: la revisión servida debe ser la última creada/lista.
+  local desc latest ready serving image cors_env
+  desc="$(gcloud run services describe "$SERVICE_ENDORSEMENTS" \
+    --project "$PROJECT_ID" --region "$REGION" --format=json --quiet 2>/dev/null || true)"
+  [ -n "$desc" ] || smoke_fail "no se pudo describir el servicio $SERVICE_ENDORSEMENTS"
+  latest="$(printf '%s' "$desc" | jq -r '.status.latestCreatedRevisionName // empty')"
+  ready="$(printf '%s' "$desc" | jq -r '.status.latestReadyRevisionName // empty')"
+  serving="$(printf '%s' "$desc" | jq -r '[.status.traffic[] | select((.percent // 0) == 100) | .revisionName][0] // empty')"
+  image="$(printf '%s' "$desc" | jq -r '.spec.template.spec.containers[0].image // empty')"
+  cors_env="$(printf '%s' "$desc" | jq -r '[.spec.template.spec.containers[0].env[]? | select(.name == "CORS_ORIGINS") | .value][0] // empty')"
+
+  [ -n "$latest" ] || smoke_fail "no se pudo leer la última revisión creada"
+  [ "$ready" = "$latest" ] || smoke_fail "la última revisión $latest no está lista (ready: ${ready:-<ninguna>})"
+  [ -n "$serving" ] || smoke_fail "ninguna revisión recibe el 100% del tráfico"
+  [ "$serving" = "$latest" ] \
+    || smoke_fail "contenedor stale: el tráfico va a $serving pero la última revisión creada es $latest. Redespliega antes de dar el entorno por bueno."
+  if [ -n "${SMOKE_EXPECT_IMAGE:-}" ]; then
+    [ "$image" = "$SMOKE_EXPECT_IMAGE" ] \
+      || smoke_fail "la imagen servida no es la recién construida: '$image' != '$SMOKE_EXPECT_IMAGE'. El deploy no reemplazó el contenedor."
+  fi
+  ok "revisión $serving sirve el 100% del tráfico (imagen $image)"
+
+  # 2) /health con reintentos: Cloud Run puede tardar unos segundos tras el rollout.
+  local attempt code
+  attempt=1
+  code="000"
+  while [ "$attempt" -le 30 ]; do
+    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$base/health" 2>/dev/null || true)"
+    [ "$code" = "200" ] && break
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+  [ "$code" = "200" ] || smoke_fail "GET /health devolvió HTTP $code (se exige 200)"
+  ok "GET /health -> 200"
+
+  # 3) Token: se acepta uno inyectado; si no, se pide el demo (scope del reto).
+  local token token_body
+  token="${SMOKE_TOKEN:-}"
+  if [ -z "$token" ]; then
+    token_body="$(curl -sS --max-time 15 -X POST "$base/v1/auth/token" \
+      -H 'content-type: application/json' \
+      -d '{"scope":"endorse:translate"}' 2>/dev/null || true)"
+    token="$(printf '%s' "$token_body" | jq -r '.token // empty' 2>/dev/null || true)"
+    [ -n "$token" ] \
+      || smoke_fail "POST /v1/auth/token no emitió token (¿ENABLE_DEMO_TOKEN=false? define SMOKE_TOKEN). Body: $token_body"
+  fi
+  ok "token de smoke disponible"
+
+  # 4) /v1/templates: ESTE es el contrato que debe romper el smoke.
+  local tmp status body count codes invalid
+  tmp="$(mktemp "${TMPDIR:-/tmp}/smoke-templates.XXXXXX")"
+  status="$(curl -sS --max-time 20 -o "$tmp" -w '%{http_code}' \
+    "$base/v1/templates" -H "authorization: Bearer ${token}" 2>/dev/null || true)"
+  body="$(cat "$tmp")"
+  rm -f "$tmp"
+
+  [ "$status" = "200" ] \
+    || smoke_fail "GET /v1/templates devolvió HTTP $status (se EXIGE 200). Body: $body"
+  printf '%s' "$body" | jq -e 'type == "array"' >/dev/null 2>&1 \
+    || smoke_fail "GET /v1/templates no devolvió un array JSON. Body: $body"
+  count="$(printf '%s' "$body" | jq -r 'length')"
+  [ "$count" = "2" ] \
+    || smoke_fail "GET /v1/templates devolvió $count plantilla(s); se EXIGEN 2. Body: $body"
+  codes="$(printf '%s' "$body" | jq -r '[.[].productCode] | sort | join(",")')"
+  [ "$codes" = "AUTO,RUMBO" ] \
+    || smoke_fail "catálogo inesperado: [$codes]; se esperan [AUTO,RUMBO]. Body: $body"
+  invalid="$(printf '%s' "$body" | jq -r '
+    [.[] | select(
+      (.productCode | type) != "string" or
+      (.productName | type) != "string" or
+      (.endorsementTypeCode | type) != "string" or
+      (.endorsementTypeName | type) != "string" or
+      (.fieldCount | type) != "number" or
+      .fieldCount <= 0
+    )] | length' 2>/dev/null || echo 'ERROR')"
+  [ "$invalid" = "0" ] \
+    || smoke_fail "hay $invalid plantilla(s) con forma inválida o fieldCount <= 0. Body: $body"
+  ok "GET /v1/templates -> 200 con 2 plantillas ($codes) y fieldCount > 0"
+
+  # 5) CORS del navegador (solo si el backend ya tiene CORS configurado).
+  if service_exists "$SERVICE_FRONTEND"; then
+    local frontend allow_origin
+    frontend="$(canonical_url "$SERVICE_FRONTEND")"
+    if [ -n "$cors_env" ]; then
+      allow_origin="$(curl -sS -o /dev/null -D - --max-time 15 -X OPTIONS \
+        "$base/v1/templates" \
+        -H "Origin: ${frontend}" \
+        -H 'Access-Control-Request-Method: GET' \
+        -H 'Access-Control-Request-Headers: authorization' 2>/dev/null \
+        | tr -d '\r' \
+        | awk 'tolower($1) == "access-control-allow-origin:" {print $2}' \
+        | head -n1)"
+      [ "$allow_origin" = "$frontend" ] \
+        || smoke_fail "CORS roto: OPTIONS /v1/templates con Origin $frontend devolvió Access-Control-Allow-Origin '${allow_origin:-<vacío>}'. Ejecuta ./deploy-gcp.sh update-cors."
+      ok "CORS: preflight /v1/templates permite $frontend"
+    else
+      warn "CORS_ORIGINS vacío en $SERVICE_ENDORSEMENTS: la UI fallará en el navegador hasta ./deploy-gcp.sh update-cors"
+    fi
+  fi
+
+  ok "SMOKE OK: /v1/templates responde 200 con las 2 plantillas"
+}
+
+# Redespliegue reproducible sin reinyectar secretos: reconstruye las imágenes
+# con el TAG actual, actualiza los 3 servicios conservando env/CORS/límites y
+# termina con el smoke estricto. Si /v1/templates no da 200 con 2 plantillas,
+# el comando falla (no se declara el entorno sano).
+cmd_redeploy() {
+  require_gcloud
+  require_common
+  cmd_build
+  cmd_deploy_backends
+  cmd_deploy_frontend
+  cmd_update_cors
+  SMOKE_EXPECT_IMAGE="$AR_HOST/$IMAGE_ENDORSEMENTS:$TAG" cmd_smoke
+}
+
 cmd_urls() {
   require_gcloud
   require_common
@@ -470,8 +669,9 @@ cmd_logs() {
 }
 
 # Orden definitivo: preflight → ensure-ar → bootstrap-db → build → deploy →
-# urls → update-cors. `update-cors` va al final porque necesita la URL del
-# frontend, que solo existe después de `deploy`.
+# urls → update-cors → smoke. `update-cors` va antes del smoke porque necesita
+# la URL del frontend, que solo existe después de `deploy`; el smoke verifica
+# además que esa CORS quedó alineada con el Origin real del navegador.
 cmd_all() {
   cmd_preflight
   cmd_ensure_ar
@@ -481,6 +681,7 @@ cmd_all() {
   cmd_deploy_frontend
   cmd_urls
   cmd_update_cors
+  SMOKE_EXPECT_IMAGE="$AR_HOST/$IMAGE_ENDORSEMENTS:$TAG" cmd_smoke
 }
 
 usage() {
@@ -491,17 +692,23 @@ Uso: ./deploy-gcp.sh <subcomando>
   ensure-ar       Crea/valida el repositorio de Artifact Registry
   bootstrap-db    Crea esquema (synchronize) + seed contra Neon (endpoint directo)
   build           Build+push de endorsements y routes
-  deploy          Despliega backends y frontend en Cloud Run
+  deploy          Despliega backends y frontend en Cloud Run + smoke estricto
+  redeploy        Build+deploy de los 3 conservando env/CORS + smoke estricto
+  smoke           Exige /v1/templates → 200 con EXACTAMENTE 2 plantillas
   urls            Imprime las URLs públicas
   update-cors     Fija CORS_ORIGINS de los backends a la URL larga canónica del frontend
   logs [servicio] Logs recientes (por defecto endorsements)
   all             Ejecuta preflight → ensure-ar → bootstrap-db → build → deploy
-                  → urls → update-cors
+                  → urls → update-cors → smoke
   help            Muestra esta ayuda
 
-Variables obligatorias: DB_HOST_POOLED, DB_HOST_DIRECT, DB_NAME, DB_USER,
-DB_PASSWORD, JWT_SECRET. Opcionales: PROJECT_ID, REGION, AR_REPO, TAG,
-CORS_ORIGINS, ENABLE_DEMO_TOKEN, DEMO_TOKEN_TTL_*, etc.
+Variables obligatorias para el primer deploy / bootstrap-db: DB_HOST_POOLED,
+DB_HOST_DIRECT, DB_NAME, DB_USER, DB_PASSWORD, JWT_SECRET. Opcionales:
+PROJECT_ID, REGION, AR_REPO, TAG, CORS_ORIGINS, ENABLE_DEMO_TOKEN,
+DEMO_TOKEN_TTL_*, SMOKE_TOKEN, etc.
+`redeploy` y `smoke` no necesitan DB_*/JWT_SECRET si los servicios ya existen:
+reutilizan la configuración de Cloud Run. El smoke pide un token demo salvo que
+definas SMOKE_TOKEN. Requiere curl, jq y awk.
 DB_PASSWORD y JWT_SECRET se leen del entorno y se envían a Cloud Run con
 --set-env-vars (ver la cabecera del script para el trade-off).
 USAGE
@@ -516,7 +723,13 @@ main() {
     ensure-ar)      cmd_ensure_ar ;;
     bootstrap-db)   cmd_bootstrap_db ;;
     build)          cmd_build ;;
-    deploy)         cmd_deploy_backends; cmd_deploy_frontend ;;
+    deploy)
+      cmd_deploy_backends
+      cmd_deploy_frontend
+      SMOKE_EXPECT_IMAGE="$AR_HOST/$IMAGE_ENDORSEMENTS:$TAG" cmd_smoke
+      ;;
+    redeploy)       cmd_redeploy ;;
+    smoke)          cmd_smoke ;;
     update-cors)    cmd_update_cors ;;
     urls)           cmd_urls ;;
     logs)

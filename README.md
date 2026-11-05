@@ -73,6 +73,10 @@ Los tres servicios están desplegados y verificados end-to-end en Cloud Run (`us
 
 - **Reto 1 —** `POST /v1/endorse/translate` → `200`; `eventEntity.description = "SolicitarEndoso"` con
   **12** entradas en `dynamicData`, preservando `'Default'` y `''` como valores distintos.
+- **Plantillas —** `GET /v1/templates` → `200` con **2** plantillas (`AUTO` y `RUMBO`) y
+  `fieldCount > 0`. Lo exige `./deploy-gcp.sh smoke`, que además comprueba que la revisión que sirve
+  el 100% del tráfico sea la **última creada** (guard explícito contra el contenedor stale que produjo
+  el 404 anterior).
 - **Reto 2 —** `POST /v1/routes/optimal` → `200`; respuesta `{fromDepot, to, path, distance: 7}`
   calculada sobre el grafo **no dirigido** (accidente `San Isidro`, base `Miraflores`).
 - **CORS —** control positivo: el `Origin` del frontend recibe `Access-Control-Allow-Origin`;
@@ -543,10 +547,22 @@ Paso a paso (equivalente y depurable):
 ./deploy-gcp.sh ensure-ar       # Artifact Registry
 ./deploy-gcp.sh bootstrap-db    # esquema + seed contra Neon (directo, DB_SYNCHRONIZE=true)
 ./deploy-gcp.sh build           # imágenes de endorsements y routes
-./deploy-gcp.sh deploy          # backends (pooled, DB_SYNCHRONIZE=false) + frontend
+./deploy-gcp.sh deploy          # backends (pooled, DB_SYNCHRONIZE=false) + frontend + smoke
 ./deploy-gcp.sh urls            # imprime las URLs públicas (largas canónicas)
 ./deploy-gcp.sh update-cors     # fija CORS_ORIGINS a la URL larga del frontend (depende de `urls`)
+./deploy-gcp.sh smoke           # EXIGE /v1/templates -> 200 con exactamente 2 plantillas
 ```
+
+Para actualizar **solo código** después de un cambio (sin volver a manejar `DB_*`/`JWT_SECRET`):
+
+```bash
+./deploy-gcp.sh redeploy
+# build de las 3 imágenes + deploy conservando env/CORS/límites + update-cors + smoke
+```
+
+`deploy`, `all` y `redeploy` terminan con el **smoke estricto**: si `/v1/templates` no devuelve
+`200` con las 2 plantillas, el comando falla con exit 1. No se declara el entorno sano con la UI
+rota en vivo.
 
 `urls` y `update-cors` escriben y usan la URL **larga canónica**
 (`https://<servicio>-<PROJECT_NUMBER>.<REGION>.run.app`), nunca la corta que devuelve `status.url`.
@@ -559,9 +575,12 @@ Paso a paso (equivalente y depurable):
 | `ensure-ar` | Crea `interseguro-reto` si no existe y configura `docker` |
 | `bootstrap-db` | `npm ci` + `npm run seed` contra el endpoint **directo**, con `DB_SYNCHRONIZE=true`, **una sola vez** |
 | `build` | `gcloud builds submit` de endorsements y routes (`.gcloudignore` evita subir `node_modules`/`dist`) |
-| `deploy` | Cloud Run de backends (env vars, secretos incluidos, por `--set-env-vars`) y frontend (build-args Vite vía `cloudbuild-frontend.yaml`) |
+| `deploy` | Cloud Run de backends (env vars, secretos incluidos, por `--set-env-vars`) y frontend (build-args Vite vía `cloudbuild-frontend.yaml`) + smoke |
+| `redeploy` | Rebuild de las 3 imágenes y deploy **conservando** env/CORS/límites (no necesita `DB_*`/`JWT_SECRET`) + `update-cors` + smoke |
+| `smoke` | Falla con exit 1 si la revisión servida no es la última creada (contenedor stale), `/health` != 200 o `/v1/templates` != 200 con **exactamente 2** plantillas; además valida el preflight CORS del frontend |
 | `update-cors` | Fija `CORS_ORIGINS` de ambos backends a la URL **larga canónica** del frontend |
 | `urls`, `logs [svc]` | Inspección de URLs largas canónicas y logs |
+| `all` | Secuencia completa terminando en `update-cors` + smoke |
 
 ### 8.5 Verificación post-despliegue
 
@@ -571,12 +590,20 @@ URL_FRONTEND="https://frontend-919990628042.us-central1.run.app"
 URL_ENDORSEMENTS="https://endorsements-919990628042.us-central1.run.app"
 URL_ROUTES="https://routes-919990628042.us-central1.run.app"
 
+# Smoke estricto: debe imprimir "SMOKE OK". Sale con código 1 si
+# /v1/templates no devuelve 200 con las 2 plantillas (AUTO y RUMBO).
+./deploy-gcp.sh smoke
+
 ./deploy-gcp.sh urls
 curl -s "$URL_ENDORSEMENTS/health"
 curl -s "$URL_ROUTES/health"
 
 TOKEN=$(curl -s -X POST "$URL_ENDORSEMENTS/v1/auth/token" -H 'Content-Type: application/json' -d '{}' \
   | sed -E 's/.*"token":"([^"]+)".*/\1/')
+
+# Catálogo de plantillas: 2 entradas y fieldCount > 0
+curl -s "$URL_ENDORSEMENTS/v1/templates" -H "Authorization: Bearer $TOKEN" | jq .
+
 curl -s -X POST "$URL_ENDORSEMENTS/v1/endorse/translate" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"policyNumber":"08200000049","idEnvio":5984,"frecuencia":"Semestral",
