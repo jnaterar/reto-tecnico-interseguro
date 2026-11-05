@@ -9,12 +9,13 @@ interface TabItem {
   id: TabId;
   label: string;
   hint: string;
+  badge: string;
 }
 
 const TABS: ReadonlyArray<TabItem> = [
-  { id: 'endorse', label: 'Traductor de endosos', hint: 'Reto 1 · Node + Hapi' },
-  { id: 'routes', label: 'Ruta óptima de grúa', hint: 'Reto 2 · Go + Dijkstra' },
-  { id: 'architecture', label: 'Arquitectura – Préstamos', hint: 'Reto 3 · Diseño Cloud' },
+  { id: 'endorse', label: 'Traductor de endosos', hint: 'Node.js + Hapi · TypeORM', badge: 'Reto 1' },
+  { id: 'routes', label: 'Ruta óptima de grúa', hint: 'Golang · Dijkstra · Min-Heap', badge: 'Reto 2' },
+  { id: 'architecture', label: 'Arquitectura – Préstamos', hint: 'Diseño Cloud · Idempotencia', badge: 'Reto 3' },
 ];
 
 export function RetosPage(): ReactElement {
@@ -51,29 +52,35 @@ export function RetosPage(): ReactElement {
         </p>
       </header>
 
-      {/* Tab-bar accesible con las 3 pestañas */}
-      <nav className="tab-bar tab-bar-prominent" role="tablist" aria-label="Pestañas de los Retos Técnicos">
-        {TABS.map((tab, index) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              id={`tab-btn-${tab.id}`}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              aria-controls={`tabpanel-${tab.id}`}
-              tabIndex={isActive ? 0 : -1}
-              className={`tab ${isActive ? 'is-active' : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-              onKeyDown={(event) => handleTabKeyDown(event, index)}
-            >
-              <span className="tab-label">{tab.label}</span>
-              <span className="tab-hint">{tab.hint}</span>
-            </button>
-          );
-        })}
-      </nav>
+      {/* Consola de navegación central y prominente de los 3 Retos */}
+      <div className="tab-deck-wrapper">
+        <nav className="tab-bar tab-bar-prominent" role="tablist" aria-label="Pestañas de los Retos Técnicos">
+          {TABS.map((tab, index) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                id={`tab-btn-${tab.id}`}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`tabpanel-${tab.id}`}
+                tabIndex={isActive ? 0 : -1}
+                className={`tab tab-${tab.id} ${isActive ? 'is-active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+                onKeyDown={(event) => handleTabKeyDown(event, index)}
+              >
+                <div className="tab-badge-row">
+                  <span className={`tab-step-badge badge-${tab.id}`}>{tab.badge}</span>
+                  <span className="tab-active-indicator" aria-hidden="true" />
+                </div>
+                <span className="tab-label">{tab.label}</span>
+                <span className="tab-hint">{tab.hint}</span>
+              </button>
+            );
+          })}
+        </nav>
+      </div>
 
       {/* Panel interactivo activo (Protagonista) */}
       <main id={`tabpanel-${activeTab}`} role="tabpanel" aria-labelledby={`tab-btn-${activeTab}`}>

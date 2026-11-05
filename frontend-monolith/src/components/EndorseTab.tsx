@@ -197,6 +197,34 @@ export function EndorseTab() {
 
   // Descarta respuestas fuera de orden si el usuario cambia de plantilla rápido.
   const templateRequestId = useRef(0);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Cerrar el dropdown al hacer clic fuera o presionar Escape
+  useEffect(() => {
+    if (!isDropdownOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDropdownOpen]);
 
   const selected = catalog.find((item) => templateKey(item) === selectedKey) ?? null;
 
@@ -339,12 +367,8 @@ export function EndorseTab() {
     void runTranslate(rawInput);
   };
 
-  const handleSelectChange = async (event: ChangeEvent<HTMLSelectElement>): Promise<void> => {
-    const next = catalog.find((item) => templateKey(item) === event.target.value) ?? null;
-    if (!next) {
-      return;
-    }
-
+  const handleSelectTemplate = async (next: TemplateCatalogItem): Promise<void> => {
+    setIsDropdownOpen(false);
     setSelectedKey(templateKey(next));
 
     // El selector manda también sobre el payload: cambiar de producto reescribe
@@ -353,6 +377,13 @@ export function EndorseTab() {
     setRawInput(nextInput);
 
     await Promise.all([applyTemplate(next), runTranslate(nextInput)]);
+  };
+
+  const handleNativeSelectChange = (event: ChangeEvent<HTMLSelectElement>): void => {
+    const next = catalog.find((item) => templateKey(item) === event.target.value) ?? null;
+    if (next) {
+      void handleSelectTemplate(next);
+    }
   };
 
   const reset = (): void => {
@@ -372,7 +403,7 @@ export function EndorseTab() {
         <form className="card" onSubmit={handleSubmit}>
           <header className="card-header">
             <div>
-              <h2>JSON plano del endoso</h2>
+              <h2>JSON Plano del Endoso</h2>
               <p className="muted">
                 Edita el payload de entrada. Las etiquetas, el orden, las constantes y los
                 eventos se resuelven desde la plantilla en base de datos.
@@ -381,7 +412,7 @@ export function EndorseTab() {
           </header>
 
           <label className="field field-editor">
-            <span>Payload de entrada (JSON)</span>
+            <span>Payload de Entrada (JSON)</span>
             <textarea
               className="code-input"
               rows={22}
@@ -406,7 +437,7 @@ export function EndorseTab() {
         <section className="card">
           <header className="card-header">
             <div>
-              <h2>JSON estructurado para el core</h2>
+              <h2>JSON Estructurado para el Core</h2>
               <p className="muted">
                 Respuesta ordenada según la plantilla. El core recibe arrays explícitos, no
                 el orden de claves de un objeto.
@@ -440,7 +471,7 @@ export function EndorseTab() {
       <section className="card endorse-template-card" aria-live="polite">
         <header className="card-header">
           <div>
-            <h2>Plantilla aplicada</h2>
+            <h2>Plantilla Aplicada</h2>
             <p className="muted">
               Lo que ves aquí no está escrito en el código: viene de las tablas{' '}
               <code>templates</code>, <code>template_fields</code> y <code>template_events</code>.
@@ -453,21 +484,114 @@ export function EndorseTab() {
         </header>
 
         <div className="template-controls">
-          <label className="field field-select">
-            <span>Producto y tipo de endoso (desde BD)</span>
+          <div className="field field-custom-select" ref={dropdownRef}>
+            <span className="field-label">Producto y tipo de endoso (desde BD)</span>
+
+            {/* Select nativo accesible sincronizado */}
             <select
+              className="sr-only"
               value={selectedKey ?? ''}
-              onChange={(event) => void handleSelectChange(event)}
-              disabled={isBusy || catalog.length === 0}
+              onChange={handleNativeSelectChange}
+              tabIndex={-1}
+              aria-hidden="true"
             >
-              {catalog.length === 0 && <option value="">Cargando plantillas…</option>}
               {catalog.map((item) => (
                 <option key={templateKey(item)} value={templateKey(item)}>
                   {item.productName} · {item.endorsementTypeName} ({item.fieldCount} campos)
                 </option>
               ))}
             </select>
-          </label>
+
+            {/* Trigger del dropdown personalizado */}
+            <button
+              type="button"
+              className={`custom-select-trigger ${isDropdownOpen ? 'is-open' : ''}`}
+              onClick={() => setIsDropdownOpen((prev) => !prev)}
+              disabled={isBusy || catalog.length === 0}
+              aria-haspopup="listbox"
+              aria-expanded={isDropdownOpen}
+            >
+              {catalog.length === 0 ? (
+                <span className="select-placeholder">Cargando plantillas…</span>
+              ) : selected ? (
+                <div className="select-selected-content">
+                  <span className={`select-product-pill pill-${selected.productName.toLowerCase()}`}>
+                    {selected.productName}
+                  </span>
+                  <span className="select-type-label">
+                    {selected.endorsementTypeName}
+                  </span>
+                  <span className="select-fields-badge">
+                    {selected.fieldCount} campos
+                  </span>
+                </div>
+              ) : (
+                <span className="select-placeholder">Selecciona una plantilla…</span>
+              )}
+
+              <svg
+                className={`select-chevron ${isDropdownOpen ? 'is-rotated' : ''}`}
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+
+            {/* Menú de opciones personalizado */}
+            {isDropdownOpen && catalog.length > 0 && (
+              <ul className="custom-select-menu" role="listbox" aria-label="Plantillas disponibles de endoso">
+                {catalog.map((item) => {
+                  const isItemSelected =
+                    Boolean(selected && templateKey(selected) === templateKey(item));
+                  return (
+                    <li
+                      key={templateKey(item)}
+                      role="option"
+                      aria-selected={isItemSelected}
+                      className={`custom-select-option ${isItemSelected ? 'is-selected' : ''}`}
+                      onClick={() => void handleSelectTemplate(item)}
+                    >
+                      <div className="option-left-content">
+                        <span className={`select-product-pill pill-${item.productName.toLowerCase()}`}>
+                          {item.productName}
+                        </span>
+                        <span className="option-name-text">
+                          {item.endorsementTypeName}
+                        </span>
+                        <span className="select-fields-badge">
+                          {item.fieldCount} campos
+                        </span>
+                      </div>
+                      {isItemSelected && (
+                        <svg
+                          className="option-check-icon"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
 
           {isTemplateLoading && <span className="badge">cargando…</span>}
         </div>
