@@ -363,6 +363,13 @@ En local se usan rutas relativas (proxy de Vite / nginx). **En cloud se pasan la
 y el navegador hace CORS directo contra cada backend** — por eso ambos backends exponen `CORS_ORIGINS` /
 `CORS_ORIGIN`.
 
+> **URL canónica (larga).** En Cloud Run la URL que el navegador abre y envía como `Origin` es
+> `https://<servicio>-<PROJECT_NUMBER>.<REGION>.run.app`. `gcloud run services describe` expone en
+> `status.url` una variante **corta** (`https://<servicio>-<hash>-<region>.a.run.app`) que el navegador
+> **no** usa como `Origin`. `deploy-gcp.sh` usa siempre la larga en el estado, en `update-cors`
+> (`CORS_ORIGINS`), en `urls` y en sus mensajes; fijar la corta deja el frontend con los indicadores en
+> rojo porque el preflight CORS no devuelve `Access-Control-Allow-Origin`.
+
 ### Cómo sirve el frontend
 
 | Contexto | Mecanismo |
@@ -450,6 +457,10 @@ Cloud Run: frontend (nginx + SPA React, puerto 8080)
   host público con `DB_SSL=true` (Neon rechaza conexiones sin TLS).
 - El frontend **no** usa el proxy interno de nginx en la nube: se compila con las URLs absolutas de
   cada backend y CORS se configura en ellos. El proxy se conserva solo para `docker compose`.
+- **La URL canónica es la larga:** `https://<servicio>-<PROJECT_NUMBER>.<REGION>.run.app`. La que
+  devuelve `status.url` (`…-<hash>-<region>.a.run.app`) es una variante corta que el navegador no
+  envía como `Origin`; el script calcula y propaga siempre la larga (con respaldo en la anotación
+  `run.googleapis.com/urls` del servicio si Cloud Resource Manager no está disponible).
 
 ### 8.2 Variables de entorno requeridas
 
@@ -468,7 +479,7 @@ Cloud Run: frontend (nginx + SPA React, puerto 8080)
 | `JWT_SECRET` | sí | Firma HS256 (≥16) | **Nunca en el repo**; se lee del entorno del operador y se inyecta al servicio como variable de entorno |
 | `ENABLE_DEMO_TOKEN` | no | Emisor de token demo | `true`: el jurado necesita autenticarse |
 | `DEMO_TOKEN_TTL_SECONDS` / `_MINUTES` | no | Vida del token demo | `3600` s (1 hora) por defecto |
-| `CORS_ORIGINS` | no | Lista de orígenes separada por comas | Vacía hasta `update-cors`; **nunca `*`** en Cloud Run |
+| `CORS_ORIGINS` | no | Lista de orígenes separada por comas | Vacía hasta `update-cors`; debe ser la URL **larga canónica** del frontend; **nunca `*`** en Cloud Run |
 | `MAX_INSTANCES` | no | Tope de réplicas | `3`, para no agotar conexiones de Neon |
 
 `PORT`, `NODE_ENV`, `DB_SSL` y `DB_SYNCHRONIZE` no se pasan a mano: Cloud Run inyecta `PORT`; la
@@ -502,9 +513,12 @@ Paso a paso (equivalente y depurable):
 ./deploy-gcp.sh bootstrap-db    # esquema + seed contra Neon (directo, DB_SYNCHRONIZE=true)
 ./deploy-gcp.sh build           # imágenes de endorsements y routes
 ./deploy-gcp.sh deploy          # backends (pooled, DB_SYNCHRONIZE=false) + frontend
-./deploy-gcp.sh urls            # imprime las URLs públicas
-./deploy-gcp.sh update-cors     # fija CORS_ORIGINS a la URL del frontend (depende de `urls`)
+./deploy-gcp.sh urls            # imprime las URLs públicas (largas canónicas)
+./deploy-gcp.sh update-cors     # fija CORS_ORIGINS a la URL larga del frontend (depende de `urls`)
 ```
+
+`urls` y `update-cors` escriben y usan la URL **larga canónica**
+(`https://<servicio>-<PROJECT_NUMBER>.<REGION>.run.app`), nunca la corta que devuelve `status.url`.
 
 ### 8.4 Qué hace cada subcomando
 
@@ -515,8 +529,8 @@ Paso a paso (equivalente y depurable):
 | `bootstrap-db` | `npm ci` + `npm run seed` contra el endpoint **directo**, con `DB_SYNCHRONIZE=true`, **una sola vez** |
 | `build` | `gcloud builds submit` de endorsements y routes (`.gcloudignore` evita subir `node_modules`/`dist`) |
 | `deploy` | Cloud Run de backends (env vars, secretos incluidos, por `--set-env-vars`) y frontend (build-args Vite vía `cloudbuild-frontend.yaml`) |
-| `update-cors` | Fija `CORS_ORIGINS` de ambos backends a la URL exacta del frontend |
-| `urls`, `logs [svc]` | Inspección de URLs y logs |
+| `update-cors` | Fija `CORS_ORIGINS` de ambos backends a la URL **larga canónica** del frontend |
+| `urls`, `logs [svc]` | Inspección de URLs largas canónicas y logs |
 
 ### 8.5 Verificación post-despliegue
 
@@ -535,17 +549,37 @@ curl -s -X POST "$URL_ENDORSEMENTS/v1/endorse/translate" \
        "fechaSolicitud":"2025-08-27","fechaCliente":"2025-08-27","fechaEfectiva":"2025-09-01"}'
 ```
 
-En el navegador: abrir la URL del frontend, pulsar *Traducir* y comprobar en *Network* que la
-llamada sale hacia `https://endorsements-...run.app`, no hacia `/endorse-api`.
+En el navegador: abrir la URL **larga canónica** del frontend
+(`https://frontend-<PROJECT_NUMBER>.<REGION>.run.app`), pulsar *Traducir* y comprobar en *Network*
+que la llamada sale hacia `https://endorsements-<PROJECT_NUMBER>.<REGION>.run.app`, no hacia
+`/endorse-api`. Los indicadores de salud deben estar en verde: eso prueba que el `Origin` largo
+coincide con `CORS_ORIGINS`.
+
+Alineación de URL (control positivo y negativo, mismo comando que ejecuta `update-cors`):
+
+```bash
+# Positivo: Origin largo canónico -> debe incluir Access-Control-Allow-Origin
+curl -i -X OPTIONS "$URL_ENDORSEMENTS/v1/endorse/translate" \
+  -H "Origin: $URL_FRONTEND" -H 'Access-Control-Request-Method: POST'
+
+# Negativo: Origin hostil -> NO debe incluir Access-Control-Allow-Origin
+curl -i -X OPTIONS "$URL_ENDORSEMENTS/v1/endorse/translate" \
+  -H 'Origin: https://evil.example.com' -H 'Access-Control-Request-Method: POST'
+```
 
 ### 8.6 Seguridad: CORS, token demo y alcance de IAM
 
-- **CORS restringido al frontend real.** Cada backend recibe `CORS_ORIGINS` como lista explícita
-  (coma separada). La URL del frontend solo existe después de desplegarlo, así que el primer deploy
-  de los backends va sin CORS y `update-cors` fija luego el origen exacto. Un `Origin` ajeno **no**
-  recibe `Access-Control-Allow-Origin`, por lo que el navegador bloquea la lectura. En local la lista
-  es `http://localhost:8080,http://localhost:5173`; `*` nunca se usa en Cloud Run (y en el backend
-  Hapi, `CORS_ORIGINS='*'` con `NODE_ENV=production` aborta el arranque).
+- **CORS restringido al frontend real (URL larga canónica).** Cada backend recibe `CORS_ORIGINS`
+  como lista explícita (coma separada). La URL del frontend solo existe después de desplegarlo, así
+  que el primer deploy de los backends va sin CORS y `update-cors` fija luego el origen exacto. El
+  `Origin` que envía el navegador es la URL **larga**
+  (`https://frontend-<PROJECT_NUMBER>.<REGION>.run.app`), **no** la corta
+  (`https://frontend-<hash>-<region>.a.run.app`) que aparece en `status.url`. `update-cors` calcula
+  siempre la larga; fijar la corta produce el bug de alineación: el preflight con el `Origin` real no
+  devuelve `Access-Control-Allow-Origin` y el frontend queda en rojo. Un `Origin` ajeno **no** recibe
+  la cabecera, por lo que el navegador bloquea la lectura. En local la lista es
+  `http://localhost:8080,http://localhost:5173`; `*` nunca se usa en Cloud Run (y en el backend Hapi,
+  `CORS_ORIGINS='*'` con `NODE_ENV=production` aborta el arranque).
 - **Headers**: `Authorization`, `Content-Type` y `X-API-Version` permitidos; `X-API-Version` expuesto.
   Preflight `OPTIONS` responde `204` con las cabeceras solo si el origen está autorizado.
 - **Token demo acotado.** `POST /v1/auth/token` sigue activo (`ENABLE_DEMO_TOKEN=true`) para que el

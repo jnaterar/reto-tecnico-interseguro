@@ -31,6 +31,12 @@
 # backends va sin CORS y `update-cors` fija después el origen exacto. En Cloud Run
 # nunca se usa `*`: el backend Hapi aborta el arranque con comodín en producción.
 #
+# URL canónica: `gcloud run services describe` devuelve en `status.url` la URL
+# CORTA (https://<svc>-<hash>-<region>.a.run.app), pero el navegador abre y envía
+# como Origin la LARGA (https://<svc>-<PROJECT_NUMBER>.<REGION>.run.app). Todo el
+# script (estado, update-cors, urls y mensajes) usa la larga; si no coincide, el
+# preflight CORS no devuelve Access-Control-Allow-Origin y el frontend rompe.
+#
 # Token demo: ENABLE_DEMO_TOKEN=true para que el evaluador pueda autenticarse, con
 # scope acotado a los endpoints del reto y vida de 3600 s (1 hora). El alcance se
 # limita por scope, no por tiempo. Ver docs/entrega-talsory.md.
@@ -58,6 +64,9 @@ REPO_ROOT="$SCRIPT_DIR"
 # --- Parametrización (todo sobreescribible por entorno) ----------------------
 PROJECT_ID="${PROJECT_ID:-reto-tecnico-interseguro}"
 REGION="${REGION:-us-central1}"
+# Número de proyecto para construir la URL larga canónica de Cloud Run. Se
+# resuelve una sola vez y se cachea (ver `resolve_project_number`).
+PROJECT_NUMBER="${PROJECT_NUMBER:-}"
 AR_REPO="${AR_REPO:-interseguro-reto}"
 AR_HOST="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
 
@@ -123,6 +132,40 @@ require_common() {
   : "${PROJECT_ID:?Define PROJECT_ID (por defecto reto-tecnico-interseguro)}"
   : "${REGION:?Define REGION (por defecto us-central1)}"
   : "${AR_REPO:?Define AR_REPO (por defecto interseguro-reto)}"
+}
+
+# Construye la URL LARGA canónica de un servicio Cloud Run:
+#   https://<servicio>-<PROJECT_NUMBER>.<REGION>.run.app
+# `status.url` devuelve la corta (…-<hash>-<región>.a.run.app), que NO es el
+# Origin que envía el navegador. Usar siempre esta forma es lo que hace que
+# CORS_ORIGINS coincida con el navegador.
+canonical_url() {
+  local service="$1"
+  resolve_project_number "$service"
+  printf 'https://%s-%s.%s.run.app' "$service" "$PROJECT_NUMBER" "$REGION"
+}
+
+# Resuelve PROJECT_NUMBER una sola vez. Fuente oficial: Cloud Resource Manager
+# (`gcloud projects describe`). Respaldo: la anotación run.googleapis.com/urls
+# del servicio ya desplegado incluye la URL larga; así funciona aunque la API de
+# Resource Manager esté deshabilitada.
+resolve_project_number() {
+  local service="${1:-$SERVICE_FRONTEND}" annotation
+  if [ -z "$PROJECT_NUMBER" ]; then
+    PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" \
+      --format='value(projectNumber)' --quiet 2>/dev/null || true)"
+  fi
+  if [ -z "$PROJECT_NUMBER" ]; then
+    annotation="$(gcloud run services describe "$service" \
+      --project "$PROJECT_ID" --region "$REGION" \
+      --format='value(metadata.annotations."run.googleapis.com/urls")' \
+      --quiet 2>/dev/null || true)"
+    PROJECT_NUMBER="$(printf '%s' "$annotation" \
+      | grep -oE 'https://[a-z0-9-]+-[0-9]+\.[a-z0-9-]+\.run\.app' \
+      | head -n1 | sed -E 's#.*-([0-9]+)\.[a-z0-9-]+\.run\.app#\1#' || true)"
+  fi
+  [ -n "$PROJECT_NUMBER" ] \
+    || die "no se pudo resolver PROJECT_NUMBER; define PROJECT_NUMBER o habilita cloudresourcemanager.googleapis.com"
 }
 
 require_db() {
@@ -307,12 +350,10 @@ cmd_deploy_backends() {
     --set-env-vars "^${d}^${routes_env}" \
     --quiet
 
-  URL_ENDORSEMENTS="$(gcloud run services describe "$SERVICE_ENDORSEMENTS" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet)"
-  URL_ROUTES="$(gcloud run services describe "$SERVICE_ROUTES" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet)"
-  [ -n "$URL_ENDORSEMENTS" ] || die "no se pudo obtener la URL de $SERVICE_ENDORSEMENTS"
-  [ -n "$URL_ROUTES" ] || die "no se pudo obtener la URL de $SERVICE_ROUTES"
+  # URL larga canónica, no la corta de status.url: es la que el navegador enviará
+  # como Origin y la que debe coincidir con CORS_ORIGINS.
+  URL_ENDORSEMENTS="$(canonical_url "$SERVICE_ENDORSEMENTS")"
+  URL_ROUTES="$(canonical_url "$SERVICE_ROUTES")"
   write_state
   echo "URL endorsements: $URL_ENDORSEMENTS"
   echo "URL routes:       $URL_ROUTES"
@@ -326,6 +367,10 @@ cmd_deploy_frontend() {
   fi
   : "${URL_ENDORSEMENTS:?no hay URL_ENDORSEMENTS; ejecuta ./deploy-gcp.sh deploy}"
   : "${URL_ROUTES:?no hay URL_ROUTES; ejecuta ./deploy-gcp.sh deploy}"
+  # Normaliza a las URLs largas canónicas aunque el estado guarde las cortas de
+  # una ejecución anterior: las VITE_* se hornean en el build.
+  URL_ENDORSEMENTS="$(canonical_url "$SERVICE_ENDORSEMENTS")"
+  URL_ROUTES="$(canonical_url "$SERVICE_ROUTES")"
 
   log "deploy frontend: build con VITE_* (build-time) + Cloud Run"
   gcloud builds submit "$REPO_ROOT/frontend-monolith" \
@@ -342,12 +387,10 @@ cmd_deploy_frontend() {
     --allow-unauthenticated \
     --quiet
 
-  URL_FRONTEND="$(gcloud run services describe "$SERVICE_FRONTEND" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet)"
-  [ -n "$URL_FRONTEND" ] || die "no se pudo obtener la URL de $SERVICE_FRONTEND"
+  URL_FRONTEND="$(canonical_url "$SERVICE_FRONTEND")"
   write_state
-  echo "URL frontend: $URL_FRONTEND"
-  echo "siguiente paso: ./deploy-gcp.sh update-cors (fija CORS_ORIGINS a esta URL)"
+  echo "URL frontend: $URL_FRONTEND (larga canónica)"
+  echo "siguiente paso: ./deploy-gcp.sh update-cors (fija CORS_ORIGINS a esta URL larga)"
 }
 
 # Fija en ambos backends el origen EXACTO del frontend ya desplegado. Se separa
@@ -360,7 +403,13 @@ cmd_update_cors() {
   fi
   : "${URL_FRONTEND:?no hay URL_FRONTEND; ejecuta ./deploy-gcp.sh deploy}"
 
-  log "update-cors: fijando $URL_FRONTEND en los backends"
+  # Recalcula SIEMPRE la URL larga canónica: el estado pudo guardarse con la
+  # corta de status.url (bug de alineación CORS). No se confía en el valor viejo.
+  URL_FRONTEND="$(canonical_url "$SERVICE_FRONTEND")"
+  URL_ENDORSEMENTS="$(canonical_url "$SERVICE_ENDORSEMENTS")"
+  URL_ROUTES="$(canonical_url "$SERVICE_ROUTES")"
+
+  log "update-cors: fijando $URL_FRONTEND (larga canónica) en los backends"
   gcloud run services update "$SERVICE_ENDORSEMENTS" \
     --project "$PROJECT_ID" --region "$REGION" \
     --update-env-vars "CORS_ORIGINS=${URL_FRONTEND}" \
@@ -370,7 +419,9 @@ cmd_update_cors() {
     --update-env-vars "CORS_ORIGINS=${URL_FRONTEND}" \
     --quiet
 
-  echo "CORS restringido a $URL_FRONTEND en $SERVICE_ENDORSEMENTS y $SERVICE_ROUTES"
+  write_state
+  echo "CORS restringido a $URL_FRONTEND (larga canónica) en $SERVICE_ENDORSEMENTS y $SERVICE_ROUTES"
+  echo "esta URL es la que el navegador envía como Origin; la corta de status.url no sirve"
   echo "verifica:"
   echo "  curl -i -X OPTIONS ${URL_ENDORSEMENTS}/v1/endorse/translate \\"
   echo "    -H 'Origin: ${URL_FRONTEND}' -H 'Access-Control-Request-Method: POST'"
@@ -381,13 +432,21 @@ cmd_update_cors() {
 cmd_urls() {
   require_gcloud
   require_common
-  local e r f
-  e="$(gcloud run services describe "$SERVICE_ENDORSEMENTS" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet 2>/dev/null || true)"
-  r="$(gcloud run services describe "$SERVICE_ROUTES" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet 2>/dev/null || true)"
-  f="$(gcloud run services describe "$SERVICE_FRONTEND" \
-    --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)' --quiet 2>/dev/null || true)"
+  local e="" r="" f=""
+  # Se comprueba la existencia del servicio y luego se construye la URL larga
+  # canónica: `status.url` devolvería la corta y desalinearía CORS.
+  if gcloud run services describe "$SERVICE_ENDORSEMENTS" \
+    --project "$PROJECT_ID" --region "$REGION" >/dev/null 2>&1; then
+    e="$(canonical_url "$SERVICE_ENDORSEMENTS")"
+  fi
+  if gcloud run services describe "$SERVICE_ROUTES" \
+    --project "$PROJECT_ID" --region "$REGION" >/dev/null 2>&1; then
+    r="$(canonical_url "$SERVICE_ROUTES")"
+  fi
+  if gcloud run services describe "$SERVICE_FRONTEND" \
+    --project "$PROJECT_ID" --region "$REGION" >/dev/null 2>&1; then
+    f="$(canonical_url "$SERVICE_FRONTEND")"
+  fi
 
   echo "endorsements: ${e:-<no desplegado>}"
   echo "routes:       ${r:-<no desplegado>}"
@@ -398,6 +457,7 @@ cmd_urls() {
     URL_ROUTES="$r"
     URL_FRONTEND="$f"
     write_state
+    echo "(URLs largas canónicas: coinciden con el Origin que envía el navegador)"
   fi
 }
 
@@ -433,7 +493,7 @@ Uso: ./deploy-gcp.sh <subcomando>
   build           Build+push de endorsements y routes
   deploy          Despliega backends y frontend en Cloud Run
   urls            Imprime las URLs públicas
-  update-cors     Fija CORS_ORIGINS de los backends a la URL del frontend
+  update-cors     Fija CORS_ORIGINS de los backends a la URL larga canónica del frontend
   logs [servicio] Logs recientes (por defecto endorsements)
   all             Ejecuta preflight → ensure-ar → bootstrap-db → build → deploy
                   → urls → update-cors
