@@ -23,13 +23,24 @@
 #   DB_HOST_POOLED, DB_HOST_DIRECT, DB_NAME, DB_USER, DB_PASSWORD, JWT_SECRET
 # Variables opcionales: PROJECT_ID, REGION, AR_REPO, TAG, SERVICE_*, IMAGE_*,
 #   PORT_*, MAX_INSTANCES, SECRET_JWT, SECRET_DB_PASSWORD, CORS_ORIGINS,
-#   CORS_ORIGIN, ENABLE_DEMO_TOKEN, STATE_FILE.
+#   ENABLE_DEMO_TOKEN, DEMO_TOKEN_TTL_SECONDS, DEMO_TOKEN_TTL_MINUTES,
+#   STATE_FILE.
 #
-# PLACEHOLDERS (se cierran en fases posteriores):
-#   - FASE 4: CORS_ORIGINS/CORS_ORIGIN y ENABLE_DEMO_TOKEN. Hoy '*' y 'true'.
-#   - FASE 5: textos/URLs definitivas en README y docs/entrega-talsory.md.
-#   - `sqladmin.googleapis.com` se habilita por la consigna; Neon NO usa Cloud
-#     SQL, así que puede retirarse cuando se cierre el script.
+# CORS (Fase 4): los backends reciben `CORS_ORIGINS` como lista separada por
+# comas. La URL del frontend solo existe DESPUÉS de desplegarlo, así que el
+# primer deploy de los backends va sin CORS y `update-cors` fija después el
+# origen exacto. En Cloud Run nunca se usa `*`.
+#
+# Token demo (Fase 4): ENABLE_DEMO_TOKEN=true para que el evaluador pueda
+# autenticarse, pero el scope está acotado a los endpoints del reto y la vida
+# del token es corta (15 min por defecto). Ver docs/entrega-talsory.md.
+#
+# `--allow-unauthenticated` es deliberado: la seguridad real vive en el JWT de
+# la aplicación (y en el CORS), no en IAM. Es una demo pública evaluable; IAM
+# impediría que el jurado abriera la URL.
+#
+# PLACEHOLDER FASE 5: textos/URLs definitivas en README y docs/entrega-talsory.md.
+# `sqladmin.googleapis.com` se habilita por la consigna; Neon NO usa Cloud SQL.
 #
 # Secretos: NUNCA se escriben en el repo. DB_PASSWORD y JWT_SECRET se leen del
 # entorno y se publican como versiones de Secret Manager; Cloud Run los monta
@@ -74,11 +85,15 @@ JWT_SECRET="${JWT_SECRET:-}"
 SECRET_JWT="${SECRET_JWT:-jwt-secret}"
 SECRET_DB_PASSWORD="${SECRET_DB_PASSWORD:-db-password}"
 
-# PLACEHOLDER FASE 4: hoy abierto para poder demostrar el flujo. La Fase 4
-# restringe CORS al origen real del frontend y ajusta ENABLE_DEMO_TOKEN.
-CORS_ORIGINS="${CORS_ORIGINS:-*}"
-CORS_ORIGIN="${CORS_ORIGIN:-*}"
+# Lista explícita de orígenes. Vacía = sin CORS hasta que `update-cors` fije la
+# URL real del frontend (nunca `*` en Cloud Run).
+CORS_ORIGINS="${CORS_ORIGINS:-}"
+# Demo pública evaluable: el jurado necesita emitir token. El scope está
+# acotado en cada backend a los endpoints del reto.
 ENABLE_DEMO_TOKEN="${ENABLE_DEMO_TOKEN:-true}"
+# Vida corta del token demo: suficiente para evaluar y caduca pronto.
+DEMO_TOKEN_TTL_SECONDS="${DEMO_TOKEN_TTL_SECONDS:-900}"
+DEMO_TOKEN_TTL_MINUTES="${DEMO_TOKEN_TTL_MINUTES:-15}"
 
 # Estado local (URLs públicas). No se versiona (ver .gitignore).
 STATE_FILE="${STATE_FILE:-$REPO_ROOT/.deploy-state.env}"
@@ -247,7 +262,17 @@ cmd_deploy_backends() {
   log "deploy backends: $SERVICE_ENDORSEMENTS y $SERVICE_ROUTES"
 
   # Cloud Run inyecta PORT en runtime; `--port` solo declara cuál escuchar.
-  # PLACEHOLDER FASE 4: CORS_ORIGINS/ENABLE_DEMO_TOKEN se restringen después.
+  # `--allow-unauthenticated` es intencional (ver cabecera): IAM bloquearía al
+  # evaluador; la autorización real está en el JWT y el CORS de la app.
+  local endorsements_env="DB_HOST=${DB_HOST_POOLED},DB_PORT=${DB_PORT},DB_USER=${DB_USER},DB_NAME=${DB_NAME},DB_SSL=true,DB_SYNCHRONIZE=false,DB_LOGGING=false,JWT_TTL_SECONDS=${DEMO_TOKEN_TTL_SECONDS},ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN}"
+  local routes_env="JWT_TTL_MINUTES=${DEMO_TOKEN_TTL_MINUTES},ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN}"
+  if [ -n "$CORS_ORIGINS" ]; then
+    endorsements_env="${endorsements_env},CORS_ORIGINS=${CORS_ORIGINS}"
+    routes_env="${routes_env},CORS_ORIGINS=${CORS_ORIGINS}"
+  else
+    warn "CORS_ORIGINS vacío: los backends arrancarán sin CORS hasta ./deploy-gcp.sh update-cors"
+  fi
+
   gcloud run deploy "$SERVICE_ENDORSEMENTS" \
     --project "$PROJECT_ID" \
     --region "$REGION" \
@@ -255,7 +280,7 @@ cmd_deploy_backends() {
     --port "$PORT_ENDORSEMENTS" \
     --allow-unauthenticated \
     --max-instances "$MAX_INSTANCES" \
-    --set-env-vars "DB_HOST=${DB_HOST_POOLED},DB_PORT=${DB_PORT},DB_USER=${DB_USER},DB_NAME=${DB_NAME},DB_SSL=true,DB_SYNCHRONIZE=false,DB_LOGGING=false,JWT_TTL_SECONDS=3600,ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN},CORS_ORIGINS=${CORS_ORIGINS}" \
+    --set-env-vars "$endorsements_env" \
     --set-secrets "JWT_SECRET=${SECRET_JWT}:latest,DB_PASSWORD=${SECRET_DB_PASSWORD}:latest" \
     --quiet
 
@@ -266,7 +291,7 @@ cmd_deploy_backends() {
     --port "$PORT_ROUTES" \
     --allow-unauthenticated \
     --max-instances "$MAX_INSTANCES" \
-    --set-env-vars "JWT_TTL_MINUTES=60,ENABLE_DEMO_TOKEN=${ENABLE_DEMO_TOKEN},CORS_ORIGIN=${CORS_ORIGIN}" \
+    --set-env-vars "$routes_env" \
     --set-secrets "JWT_SECRET=${SECRET_JWT}:latest" \
     --quiet
 
@@ -310,7 +335,35 @@ cmd_deploy_frontend() {
   [ -n "$URL_FRONTEND" ] || die "no se pudo obtener la URL de $SERVICE_FRONTEND"
   write_state
   echo "URL frontend: $URL_FRONTEND"
-  warn "PLACEHOLDER FASE 4: CORS sigue en '*' en los backends; se restringirá a $URL_FRONTEND"
+  echo "siguiente paso: ./deploy-gcp.sh update-cors (fija CORS_ORIGINS a esta URL)"
+}
+
+# Fija en ambos backends el origen EXACTO del frontend ya desplegado. Se separa
+# de `deploy` porque la URL del frontend no existe antes de crearlo.
+cmd_update_cors() {
+  require_gcloud
+  require_common
+  if ! load_state; then
+    die "no existe $STATE_FILE. Ejecuta antes ./deploy-gcp.sh deploy"
+  fi
+  : "${URL_FRONTEND:?no hay URL_FRONTEND; ejecuta ./deploy-gcp.sh deploy}"
+
+  log "update-cors: fijando $URL_FRONTEND en los backends"
+  gcloud run services update "$SERVICE_ENDORSEMENTS" \
+    --project "$PROJECT_ID" --region "$REGION" \
+    --update-env-vars "CORS_ORIGINS=${URL_FRONTEND}" \
+    --quiet
+  gcloud run services update "$SERVICE_ROUTES" \
+    --project "$PROJECT_ID" --region "$REGION" \
+    --update-env-vars "CORS_ORIGINS=${URL_FRONTEND}" \
+    --quiet
+
+  echo "CORS restringido a $URL_FRONTEND en $SERVICE_ENDORSEMENTS y $SERVICE_ROUTES"
+  echo "verifica:"
+  echo "  curl -i -X OPTIONS ${URL_ENDORSEMENTS}/v1/endorse/translate \\"
+  echo "    -H 'Origin: ${URL_FRONTEND}' -H 'Access-Control-Request-Method: POST'"
+  echo "  curl -i -X OPTIONS ${URL_ENDORSEMENTS}/v1/endorse/translate \\"
+  echo "    -H 'Origin: https://evil.example.com' -H 'Access-Control-Request-Method: POST'"
 }
 
 cmd_urls() {
@@ -352,6 +405,7 @@ cmd_all() {
   cmd_build
   cmd_deploy_backends
   cmd_deploy_frontend
+  cmd_update_cors
   cmd_urls
 }
 
@@ -365,14 +419,16 @@ Uso: ./deploy-gcp.sh <subcomando>
   bootstrap-db    Crea esquema (synchronize) + seed contra Neon (endpoint directo)
   build           Build+push de endorsements y routes
   deploy          Despliega backends y frontend en Cloud Run
+  update-cors     Fija CORS_ORIGINS de los backends a la URL del frontend
   urls            Imprime las URLs públicas
   logs [servicio] Logs recientes (por defecto endorsements)
   all             Ejecuta todo en el orden documentado
   help            Muestra esta ayuda
 
 Variables obligatorias: DB_HOST_POOLED, DB_HOST_DIRECT, DB_NAME, DB_USER,
-DB_PASSWORD, JWT_SECRET. Opcionales: PROJECT_ID, REGION, AR_REPO, TAG, etc.
-Ver la cabecera del script para el detalle y los placeholders de Fase 4.
+DB_PASSWORD, JWT_SECRET. Opcionales: PROJECT_ID, REGION, AR_REPO, TAG,
+CORS_ORIGINS, ENABLE_DEMO_TOKEN, DEMO_TOKEN_TTL_*, etc.
+Ver la cabecera del script para el detalle.
 USAGE
 }
 
@@ -385,6 +441,7 @@ main() {
     bootstrap-db)   cmd_bootstrap_db ;;
     build)          cmd_build ;;
     deploy)         cmd_deploy_backends; cmd_deploy_frontend ;;
+    update-cors)    cmd_update_cors ;;
     urls)           cmd_urls ;;
     logs)
       shift
