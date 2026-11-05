@@ -268,8 +268,11 @@ cmd_preflight() {
   else
     billing="$(perl -e 'alarm 20; exec @ARGV' -- gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' --quiet 2>/dev/null || echo 'UNKNOWN')"
   fi
-  [[ "$billing" == "True" ]] && ok "billingEnabled=True" \
-    || warn "billingEnabled=$billing (no verificable por script; confírmalo a mano)"
+  if [[ "$billing" == "True" ]]; then
+    ok "billingEnabled=True"
+  else
+    warn "billingEnabled=$billing (no verificable por script; confírmalo a mano)"
+  fi
 
   local apis=(
     run.googleapis.com
