@@ -249,9 +249,12 @@ curl -s -X POST localhost:8081/v1/routes/optimal \
 | Nodo inexistente (accidente **o** base) | `NODE_NOT_FOUND` (422), **distinto** de `UNREACHABLE`; se valida antes de calcular | `TestFindOptimalRouteErrors` → «depot inexistente en el grafo» |
 | Pesos negativos | `VALIDATION_ERROR` (400) al construir el grafo | `TestNewGraphRejectsNegativeWeights` |
 
-Los 19 tests de Go cubren dominio (`TestShortestPath`, `TestShortestPathErrors`,
-`TestNewGraphRejectsNegativeWeights`), servicio (`TestFindOptimalRoute*`) y contrato HTTP
-(`TestOptimalRouteRequiresJWT`, `TestOptimalRouteUnreachable`, `TestCORSPreflight`).
+Los 20 tests de Go (40 casos contando subtests) cubren dominio (`TestShortestPath`,
+`TestShortestPathErrors`, `TestNewGraphRejectsNegativeWeights`), servicio (`TestFindOptimalRoute*`),
+contrato HTTP (`TestOptimalRouteRequiresJWT`, `TestOptimalRouteUnreachable`) y seguridad
+(`TestCORSPreflightAllowsConfiguredOrigin`, `TestCORSPreflightRejectsUnknownOrigin`,
+`TestCORSDoesNotEchoUnknownOriginOnSimpleRequest`, `TestDemoTokenRejectsArbitraryScope`,
+`TestDemoTokenDefaultsToLimitedScope`, `TestOptimalRouteRejectsTokenWithWrongScope`).
 Detalle: [`backend-routes-golang/README.md`](backend-routes-golang/README.md).
 
 ---
@@ -378,8 +381,9 @@ Cloud Run: frontend (nginx + SPA React, puerto 8080)
 | `DB_PASSWORD` | sí | Contraseña | **Nunca en el repo**; va a Secret Manager (`db-password`) |
 | `JWT_SECRET` | sí | Firma HS256 (≥16) | **Nunca en el repo**; Secret Manager (`jwt-secret`) |
 | `SECRET_JWT`, `SECRET_DB_PASSWORD` | no | Nombres de secretos | `jwt-secret`, `db-password` |
-| `ENABLE_DEMO_TOKEN` | no | Emisor de token demo | **Placeholder Fase 4** (hoy `true`) |
-| `CORS_ORIGINS`, `CORS_ORIGIN` | no | Origen permitido | **Placeholder Fase 4** (hoy `*`) |
+| `ENABLE_DEMO_TOKEN` | no | Emisor de token demo | `true`: el jurado necesita autenticarse |
+| `DEMO_TOKEN_TTL_SECONDS` / `_MINUTES` | no | Vida del token demo | `900` s (~15 min) por defecto |
+| `CORS_ORIGINS` | no | Lista de orígenes separada por comas | Vacía hasta `update-cors`; **nunca `*`** en Cloud Run |
 | `MAX_INSTANCES` | no | Tope de réplicas | `3`, para no agotar conexiones de Neon |
 
 `PORT`, `NODE_ENV`, `DB_SSL` y `DB_SYNCHRONIZE` no se pasan a mano: Cloud Run inyecta `PORT`; la
@@ -409,6 +413,7 @@ Paso a paso (equivalente y depurable):
 ./deploy-gcp.sh bootstrap-db    # esquema + seed contra Neon (endpoint directo)
 ./deploy-gcp.sh build           # imágenes de endorsements y routes
 ./deploy-gcp.sh deploy          # backends + frontend (captura URLs)
+./deploy-gcp.sh update-cors     # fija CORS_ORIGINS a la URL del frontend
 ./deploy-gcp.sh urls            # imprime las URLs públicas
 ```
 
@@ -422,6 +427,7 @@ Paso a paso (equivalente y depurable):
 | `bootstrap-db` | `npm ci` + `npm run seed` con `DB_SYNCHRONIZE=true`, **una sola vez** |
 | `build` | `gcloud builds submit` de endorsements y routes (`.gcloudignore` evita subir `node_modules`/`dist`) |
 | `deploy` | Cloud Run de backends (secretos) y frontend (build-args Vite vía `cloudbuild-frontend.yaml`) |
+| `update-cors` | Fija `CORS_ORIGINS` de ambos backends a la URL exacta del frontend |
 | `urls`, `logs [svc]` | Inspección de URLs y logs |
 
 ### 8.5 Verificación post-despliegue
@@ -444,20 +450,40 @@ curl -s -X POST "$URL_ENDORSEMENTS/v1/endorse/translate" \
 En el navegador: abrir la URL del frontend, pulsar *Traducir* y comprobar en *Network* que la
 llamada sale hacia `https://endorsements-...run.app`, no hacia `/endorse-api`.
 
-### 8.6 Notas honestas y pendientes
+### 8.6 Seguridad: CORS, token demo y alcance de IAM
+
+- **CORS restringido al frontend real.** Cada backend recibe `CORS_ORIGINS` como lista explícita
+  (coma separada). La URL del frontend solo existe después de desplegarlo, así que el primer deploy
+  de los backends va sin CORS y `update-cors` fija luego el origen exacto. Un `Origin` ajeno **no**
+  recibe `Access-Control-Allow-Origin`, por lo que el navegador bloquea la lectura. En local la lista
+  es `http://localhost:8080,http://localhost:5173`; `*` nunca se usa en Cloud Run (y en el backend
+  Hapi, `CORS_ORIGINS='*'` con `NODE_ENV=production` aborta el arranque).
+- **Headers**: `Authorization`, `Content-Type` y `X-API-Version` permitidos; `X-API-Version` expuesto.
+  Preflight `OPTIONS` responde `204` con las cabeceras solo si el origen está autorizado.
+- **Token demo acotado.** `POST /v1/auth/token` sigue activo (`ENABLE_DEMO_TOKEN=true`) para que el
+  evaluador pruebe el flujo, pero el `scope` está limitado a `endorse:translate` (Hapi) y
+  `routes:optimal` (Go); pedir otro scope devuelve `400` y un token con scope ajeno recibe `403`.
+  La vida es corta: 900 s / 15 min en el despliegue. No hay endpoints administrativos que el token
+  demo pueda alcanzar.
+- **`--allow-unauthenticated` es intencional.** IAM bloquearía al jurado; la seguridad real está en
+  el JWT de la aplicación y en CORS, no en la autenticación de la plataforma. Para un entorno
+  corporativo se añadiría IAP o un API Gateway delante.
+- **nginx** añade solo `X-Content-Type-Options`, `X-Frame-Options` y `Referrer-Policy`; no hay CSP,
+  WAF ni rate limiting (fuera de alcance).
+
+### 8.7 Notas honestas y pendientes
 
 - **Latencia Neon ↔ Cloud Run**: con Neon en `us-east-1` y Cloud Run en `us-central1`, cada
   *round-trip* añade ~15–30 ms. Se mitiga usando el endpoint **pooled** en runtime y reservando el
   **directo** para el bootstrap.
 - **Sin framework de migraciones**: el esquema se crea con `DB_SYNCHRONIZE=true` una sola vez y
   después el servicio corre con `DB_SYNCHRONIZE=false`. Versionar migraciones TypeORM sigue pendiente.
-- **CORS y token demo son placeholders de la Fase 4**: hoy `CORS_*='*'` y `ENABLE_DEMO_TOKEN=true`.
 - **`sqladmin.googleapis.com`** se habilita por requisito de la consigna, pero Neon **no** usa Cloud
   SQL; puede retirarse al cerrar el script.
 - **No ejecutado**: ningún comando de este script se ha lanzado contra GCP en este entorno. La
-  evidencia de la Fase 3 es `bash -n`, `shellcheck`, fallo limpio y parseo del YAML en local.
+  evidencia local es `bash -n`, `shellcheck`, fallo limpio, parseo del YAML y `docker compose`.
 
-### 8.7 Alternativa sin GCP (Render / Railway)
+### 8.8 Alternativa sin GCP (Render / Railway)
 
 1. **Postgres**: *New + → PostgreSQL*. Copiar **host, puerto, usuario, contraseña y base**
    (no la URL completa: TypeORM se configura por campos).
@@ -473,10 +499,11 @@ llamada sale hacia `https://endorsements-...run.app`, no hacia `/endorse-api`.
    DB_SYNCHRONIZE=true
    JWT_SECRET=<secreto largo>
    ENABLE_DEMO_TOKEN=true
-   CORS_ORIGINS=*
+   CORS_ORIGINS=https://<tu-frontend>.onrender.com
    ```
    > `DB_SSL=true` es obligatorio en Neon y en cualquier Postgres gestionado: sin TLS la conexión se rechaza.
-   > `NODE_ENV=production` ya viene en la imagen.
+   > `NODE_ENV=production` ya viene en la imagen, así que `CORS_ORIGINS=*` **aborta el arranque**: hay que
+   > poner la URL real del frontend (y en el servicio de rutas la misma lista en `CORS_ORIGINS`).
 3. **seed**: *Job* / *one-off command* con la misma imagen: `node dist/seed/seed.js`
    y las mismas variables `DB_*` (se ejecuta una vez).
 4. **routes**: *Web Service* → Docker, root `backend-routes-golang`, puerto 8081,
@@ -515,14 +542,16 @@ No hay usuarios ni contraseñas reales: la autenticación es un **JWT HS256 de d
 
 | Dato | Valor | Nota |
 |---|---|---|
-| Emisor Reto 1 | `POST :8082/v1/auth/token` | Cuerpo opcional `{"subject":"demo-client","scope":"endorse:translate"}` |
-| Emisor Reto 2 | `POST :8081/v1/auth/token` | Cuerpo opcional `{"subject":"demo-client","scope":"routes:read"}` |
+| Emisor Reto 1 | `POST :8082/v1/auth/token` | `scope` admitido: `endorse:translate` (default). Cualquier otro → `400` |
+| Emisor Reto 2 | `POST :8081/v1/auth/token` | `scope` admitido: `routes:optimal` (default; `routes:read` por compatibilidad). Cualquier otro → `400` |
 | Secreto local | `dev-secret-change-me-please` | **Solo local**; ambos backends lo leen de `JWT_SECRET` (≥16 caracteres) |
-| Vigencia | 3600 s (Reto 1) / 60 min (Reto 2) | `JWT_TTL_SECONDS` / `JWT_TTL_MINUTES` |
+| Vigencia | 3600 s en local; **900 s** por default en producción | `JWT_TTL_SECONDS` / `JWT_TTL_MINUTES` |
 | Usuario demo | `demo-client` | `subject` del claim |
 
-El `scope` se emite como claim, pero la demo **no** autoriza por scope: en producción esa decisión
-corresponde al API Gateway/IdP. `ENABLE_DEMO_TOKEN=false` apaga el emisor.
+El `scope` **sí se aplica**: cada ruta exige el suyo (`/v1/endorse/translate` → `endorse:translate`,
+`/v1/routes/optimal` → `routes:optimal`) y un token bien firmado con otro scope responde `403 FORBIDDEN`.
+El emisor de demo rechaza scopes ajenos con `400 VALIDATION_ERROR`, así que el token del jurado no escala
+privilegios ni alcanza endpoints administrativos (no hay ninguno expuesto). `ENABLE_DEMO_TOKEN=false` apaga el emisor.
 
 Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 [§4](#4-reto-2--ruta-óptima-de-grúa), y en los README de cada backend.
@@ -593,8 +622,12 @@ Los ejemplos cURL completos están en [§3](#3-reto-1--traductor-de-endosos) y
 
 | Comando | Resultado |
 |---|---|
-| `cd backend-routes-golang && go build ./... && go vet ./... && go test ./...` | OK — 4 paquetes de test |
-| `cd backend-endorsements-hapi && npm run typecheck && npm test` | OK — `tsc --noEmit` limpio, **20/20** tests |
+| `cd backend-routes-golang && go build ./... && go vet ./... && go test ./...` | OK — 4 paquetes de test, 20 tests (40 casos con subtests) |
+| `cd backend-endorsements-hapi && npm run typecheck && npm test` | OK — `tsc --noEmit` limpio, **24/24** tests |
+| Preflight CORS real (`OPTIONS` con `Origin: http://localhost:8080`) | OK — `204`, `Access-Control-Allow-Origin: http://localhost:8080` (nunca `*`), `Allow-Headers` con `authorization,content-type,x-api-version`, `Max-Age: 600`, `Expose-Headers: x-api-version` |
+| Control negativo CORS (`Origin: http://evil.example.com`) | OK — **sin** `Access-Control-Allow-Origin`; en Hapi `200 {"message":"CORS error: Origin not allowed"}`, en Go `204` sin headers CORS |
+| Token de demo: claims reales decodificados | OK — `scope` acotado (`endorse:translate` / `routes:optimal`) y `exp` a 3600 s en local (900 s en el despliegue) |
+| Escalada de scope (`{"scope":"admin:all"}`) y token cruzado entre servicios | OK — `400 VALIDATION_ERROR` al emitir, `403 FORBIDDEN` al consumir en el servicio equivocado |
 | `cd frontend-monolith && npm run build` | OK — `tsc --noEmit` + `vite build` (156 kB JS / 8 kB CSS) |
 | `docker compose config -q` | OK — compose válido |
 | `docker compose down -v && docker compose up -d --build` | OK — partiendo de volumen limpio: `db`, `endorsements`, `routes` y `frontend` en *healthy*; `seed` terminó `Exited (0)` |

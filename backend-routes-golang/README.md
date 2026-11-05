@@ -16,9 +16,15 @@ Servicio de cálculo de rutas óptimas para asignación de grúas (Reto 2).
 |---|---|---|
 | `PORT` | `8081` | Puerto HTTP (mismo valor en local y en Docker) |
 | `JWT_SECRET` | `dev-secret-change-me-please` | Firma HS256 (mínimo 16 caracteres) |
-| `JWT_TTL_MINUTES` | `60` | Vida del token |
-| `ENABLE_DEMO_TOKEN` | `true` | Habilita `/v1/auth/token` (apagar en prod) |
-| `CORS_ORIGIN` | `*` | Origen permitido para el frontend |
+| `JWT_TTL_MINUTES` | `15` | Vida del token (rango razonable para una demo: 15–60) |
+| `ENABLE_DEMO_TOKEN` | `true` | Habilita `/v1/auth/token` (token acotado a `routes:optimal`) |
+| `CORS_ORIGINS` | vacío | Lista de orígenes separados por coma (nunca `*` en producción) |
+| `CORS_ORIGIN` | — | Compatibilidad: se usa solo si `CORS_ORIGINS` está vacía |
+
+`CORS_ORIGINS` acepta una lista (`https://app.example.com,http://localhost:8080`) y se compara por
+**origen exacto**; la respuesta refleja ese mismo origen y añade `Vary: Origin`. Si la lista queda
+vacía no se emite `Access-Control-Allow-Origin` (el servicio sigue siendo consumible server-to-server).
+`*` se acepta únicamente como comodín de desarrollo local.
 
 ### Ejemplo
 
@@ -52,7 +58,13 @@ curl -s -X POST localhost:8081/v1/routes/optimal \
   base aislada no bloquea a las demás.
 - **Empates deterministas**: gana la primera base en el orden del input.
 - **Errores tipados**: `VALIDATION_ERROR` (400), `NODE_NOT_FOUND` /
-  `UNREACHABLE` (422), `UNAUTHORIZED` (401).
+  `UNREACHABLE` (422), `UNAUTHORIZED` (401), `FORBIDDEN` (403).
+- **Scope en la ruta, no solo en el token**: `/v1/routes/optimal` exige el
+  scope `routes:optimal`. El emisor de demo rechaza cualquier otro scope con
+  400 y un token ajeno (aunque esté bien firmado) recibe 403. `routes:read` se
+  mantiene aceptado por compatibilidad.
+- **CORS explícito**: `OPTIONS` se atiende en el middleware, antes del mux, y
+  devuelve 204 con los headers solo para orígenes de la lista blanca.
 - **Extensibilidad**: el grafo viene en el payload; cambiar la red de Lima no
   toca el algoritmo.
 - **Sin dependencias externas**: JWT HS256 con `crypto/hmac` para mantener el
