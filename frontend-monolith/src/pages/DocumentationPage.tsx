@@ -484,9 +484,18 @@ curl -s -X POST https://routes-919990628042.us-central1.run.app/v1/routes/optima
 
 
       {/* Bloque: Cómo reproducir en 3 pasos */}
-      <section className="reproduce-section" aria-label="Instrucciones de reproducción local">
-        <h3 className="section-subtitle">Cómo reproducir en 3 pasos</h3>
-        <p className="muted">Comandos mínimos para clonar, desplegar y smoke test:</p>
+      <article id="reproduccion" className="challenge-article challenge-reproduce">
+        <header className="article-header">
+          <div className="article-tag-row">
+            <span className="article-badge reproduce-badge">Guía Rápida · Local</span>
+            <span className="muted small">Docker Compose · CLI · Smoke Tests</span>
+          </div>
+          <h2>Cómo reproducir en 3 pasos</h2>
+          <p className="article-desc">
+            Comandos mínimos para clonar, desplegar y validar la salud de los servicios en entorno local:
+          </p>
+        </header>
+
         <CopySnippet
           label="Bash · Reproducción en 3 pasos"
           code={`# Paso 1: Clonar e ingresar
@@ -501,26 +510,36 @@ curl -s http://localhost:8080/healthz && echo " -> Frontend OK"
 curl -s http://localhost:8081/health && echo " -> Rutas OK"
 curl -s http://localhost:8082/health && echo " -> Endosos OK"`}
         />
-      </section>
-
+      </article>
 
       {/* Bloque: Notas de honestidad técnica */}
-      <section className="honesty-notes-card">
-        <div>
-          <h3>Notas de honestidad técnica</h3>
-          <ul className="honesty-list">
-            <li>
-              <strong>Variables de entorno vs Secret Manager:</strong> Configuración por variables de entorno en lugar de Secret Manager (trade-off aceptado por el alcance; se documenta la rotación de credenciales post-reto).
-            </li>
-            <li>
-              <strong>Token demo con TTL:</strong> El token demo tiene un TTL limitado por seguridad.
-            </li>
-            <li>
-              <strong>Alcance del Reto 3:</strong> El Reto 3 entrega <strong>diseño</strong> de arquitectura; no implementación en código en este alcance.
-            </li>
-          </ul>
+      <article id="honestidad" className="challenge-article challenge-honesty">
+        <header className="article-header">
+          <div className="article-tag-row">
+            <span className="article-badge honesty-badge">Criterio Técnico &amp; Trade-offs</span>
+            <span className="muted small">Transparencia de Arquitectura</span>
+          </div>
+          <h2>Notas de honestidad técnica</h2>
+          <p className="article-desc">
+            Decisiones conscientes de diseño, límites del alcance y consideraciones para un entorno corporativo real:
+          </p>
+        </header>
+
+        <div className="honesty-cards-grid">
+          <div className="honesty-card-item">
+            <strong>Variables de entorno vs Secret Manager</strong>
+            <p>Configuración por variables de entorno en lugar de Secret Manager (trade-off aceptado por el alcance; se documenta la rotación de credenciales post-reto).</p>
+          </div>
+          <div className="honesty-card-item">
+            <strong>Token demo con TTL</strong>
+            <p>El token demo tiene un TTL limitado por seguridad institucional y caducidad automática.</p>
+          </div>
+          <div className="honesty-card-item">
+            <strong>Alcance del Reto 3</strong>
+            <p>El Reto 3 entrega diseño y especificación técnica de arquitectura; no implementación en código en este alcance.</p>
+          </div>
         </div>
-      </section>      
+      </article>      
     </div>
   );
 }
