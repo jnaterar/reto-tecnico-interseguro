@@ -25,8 +25,12 @@
 # Smoke estricto (lección aprendida): un 404 de /v1/templates en producción no
 # era un bug de código, era un contenedor stale. `smoke` exige que la revisión
 # que sirve el 100% del tráfico sea la ÚLTIMA creada, que /health responda 200,
-# que /v1/templates devuelva 200 y que el catálogo tenga EXACTAMENTE 2
-# plantillas (AUTO y RUMBO). Si algo falla, termina con exit 1.
+# que /v1/templates devuelva 200 con EXACTAMENTE 2 plantillas (AUTO y RUMBO) y
+# que POST /v1/endorse/translate TRADUZCA de verdad (200, x-api-version v1,
+# `eventEntity.dynamicData` y `eventAppliedEntities` no vacíos y bien formados).
+# El catálogo por sí solo no prueba la traducción: el guard de `source_key` vive
+# en el POST, así que sin ese check un 500 de configuración pasaba desapercibido.
+# Si algo falla, termina con exit 1.
 #
 # `redeploy` reutiliza la configuración ya existente de Cloud Run (env vars,
 # CORS y límites) y solo cambia las imágenes: no necesita DB_*/JWT_SECRET en el
@@ -490,6 +494,93 @@ smoke_fail() {
   exit 1
 }
 
+# Payload canónico del enunciado: espejo EXACTO de `exampleRequest` en
+# backend-endorsements-hapi/tests/fixtures.ts. Se escribe literal para que el
+# smoke no dependa de Node ni de importar TypeScript en el operador, y para que
+# una rotura de contrato se vea como un fallo del smoke y no como un error de
+# importación. Los 11 campos son `.required()` en el esquema Joi de la ruta.
+SMOKE_TRANSLATE_PAYLOAD='{
+  "policyNumber": "08200000049",
+  "idEnvio": 5984,
+  "frecuencia": "Semestral",
+  "tipoEndoso": "CambioFrecuencia",
+  "producto": "Rumbo",
+  "plan": "PlanRumbo",
+  "moneda": "Nuevo Sol",
+  "usuario": "interface.servicios",
+  "fechaSolicitud": "2025-08-27",
+  "fechaCliente": "2025-08-27",
+  "fechaEfectiva": "2025-09-01"
+}'
+
+# Verifica que el contenedor desplegado TRADUCE de verdad, no solo que lista.
+# Los asserts son sobre el contrato REAL (CoreEndorsePayload), no sobre nombres
+# inventados: `eventEntity.dynamicData` (array de {etiqueta, value}) y
+# `eventAppliedEntities` (array de {description, orderEvent}). Además exige la
+# cabecera de versionado `x-api-version: v1` que fija el controller.
+#
+# Se extrajo a función a propósito: la prueba de dientes ejecuta ESTE MISMO
+# código contra un servidor local, de modo que lo probado es lo que corre en
+# producción, sin copias que puedan divergir.
+smoke_translate() {
+  local base="$1" token="$2"
+  local tmp hdr status body api_version dyn dyn_invalid events events_invalid
+  tmp="$(mktemp "${TMPDIR:-/tmp}/smoke-translate.XXXXXX")"
+  hdr="$(mktemp "${TMPDIR:-/tmp}/smoke-translate-headers.XXXXXX")"
+
+  status="$(curl -sS --max-time 20 -D "$hdr" -o "$tmp" -w '%{http_code}' \
+    -X POST "$base/v1/endorse/translate" \
+    -H "authorization: Bearer ${token}" \
+    -H 'content-type: application/json' \
+    --data "$SMOKE_TRANSLATE_PAYLOAD" 2>/dev/null || true)"
+  body="$(cat "$tmp")"
+  api_version="$(tr -d '\r' < "$hdr" | awk 'tolower($1) == "x-api-version:" {print $2}' | head -n1)"
+  rm -f "$tmp" "$hdr"
+
+  [ "$status" = "200" ] \
+    || smoke_fail "POST /v1/endorse/translate devolvió HTTP $status (se EXIGE 200). Body: $body"
+  printf '%s' "$body" | jq -e 'type == "object"' >/dev/null 2>&1 \
+    || smoke_fail "POST /v1/endorse/translate no devolvió un objeto JSON. Body: $body"
+  [ "$api_version" = "v1" ] \
+    || smoke_fail "POST /v1/endorse/translate devolvió x-api-version '${api_version:-<vacío>}' (se EXIGE v1). Body: $body"
+
+  # `eventEntity.dynamicData`: array con >= 1 entrada, cada una {etiqueta, value}
+  # de tipo string y etiqueta no vacía. NO se compara el conteo con fieldCount:
+  # eso duplicaría la cobertura de los unit tests y acoplaría el smoke a los
+  # datos sembrados (un drift de seed daría un rojo permanente).
+  dyn="$(printf '%s' "$body" | jq -r '
+    if (.eventEntity.dynamicData | type) == "array" then (.eventEntity.dynamicData | length) else -1 end
+  ' 2>/dev/null || echo -1)"
+  [ "$dyn" -ge 1 ] 2>/dev/null \
+    || smoke_fail "eventEntity.dynamicData no es un array con >= 1 elemento (length: ${dyn:-<ilegible>}). Body: $body"
+  dyn_invalid="$(printf '%s' "$body" | jq -r '
+    [ .eventEntity.dynamicData[] | select(
+      (.etiqueta | type) != "string" or
+      (.etiqueta | length) == 0 or
+      (.value | type) != "string"
+    )] | length' 2>/dev/null || echo 'ERROR')"
+  [ "$dyn_invalid" = "0" ] \
+    || smoke_fail "hay $dyn_invalid entrada(s) de eventEntity.dynamicData sin {etiqueta, value} string válidos. Body: $body"
+
+  # `eventAppliedEntities`: array con >= 1 entrada {description, orderEvent}.
+  events="$(printf '%s' "$body" | jq -r '
+    if (.eventAppliedEntities | type) == "array" then (.eventAppliedEntities | length) else -1 end
+  ' 2>/dev/null || echo -1)"
+  [ "$events" -ge 1 ] 2>/dev/null \
+    || smoke_fail "eventAppliedEntities no es un array con >= 1 elemento (length: ${events:-<ilegible>}). Body: $body"
+  events_invalid="$(printf '%s' "$body" | jq -r '
+    [ .eventAppliedEntities[] | select(
+      (.description | type) != "string" or
+      (.description | length) == 0 or
+      (.orderEvent | type) != "number"
+    )] | length' 2>/dev/null || echo 'ERROR')"
+  [ "$events_invalid" = "0" ] \
+    || smoke_fail "hay $events_invalid entrada(s) de eventAppliedEntities sin {description, orderEvent} válidos. Body: $body"
+
+  # Evidencia para el log del deploy: status, versionado y tamaños.
+  ok "POST /v1/endorse/translate -> 200 (x-api-version $api_version, dynamicData $dyn, eventAppliedEntities $events)"
+}
+
 # Exige:
 #   1. La revisión que sirve el 100% del tráfico == última revisión creada y
 #      lista (si no, es un contenedor stale: exactamente el 404 anterior).
@@ -497,7 +588,10 @@ smoke_fail() {
 #   3. Token (SMOKE_TOKEN si está definido; si no, token demo) -> Bearer.
 #   4. GET /v1/templates -> 200, array JSON con EXACTAMENTE 2 plantillas
 #      (AUTO y RUMBO), todas con fieldCount > 0.
-#   5. Si el backend tiene CORS_ORIGINS configurado, el preflight del navegador
+#   5. POST /v1/endorse/translate -> 200 con `x-api-version: v1`,
+#      `eventEntity.dynamicData` y `eventAppliedEntities` no vacíos y bien
+#      formados. Sin este paso el fix de `source_key` no se ejercita en runtime.
+#   6. Si el backend tiene CORS_ORIGINS configurado, el preflight del navegador
 #      para el frontend canónico devuelve ese mismo Access-Control-Allow-Origin.
 cmd_smoke() {
   require_gcloud
@@ -590,7 +684,12 @@ cmd_smoke() {
     || smoke_fail "hay $invalid plantilla(s) con forma inválida o fieldCount <= 0. Body: $body"
   ok "GET /v1/templates -> 200 con 2 plantillas ($codes) y fieldCount > 0"
 
-  # 5) CORS del navegador (solo si el backend ya tiene CORS configurado).
+  # 5) /v1/endorse/translate: el catálogo prueba que la plantilla EXISTE; este
+  #    POST prueba que el contenedor la TRADUCE. Es donde vive el guard de
+  #    `source_key`, así que es el único check que detecta ese 500 en vivo.
+  smoke_translate "$base" "$token"
+
+  # 6) CORS del navegador (solo si el backend ya tiene CORS configurado).
   if service_exists "$SERVICE_FRONTEND"; then
     local frontend allow_origin
     frontend="$(canonical_url "$SERVICE_FRONTEND")"
@@ -611,12 +710,13 @@ cmd_smoke() {
     fi
   fi
 
-  ok "SMOKE OK: /v1/templates responde 200 con las 2 plantillas"
+  ok "SMOKE OK: /v1/templates 200 con 2 plantillas y /v1/endorse/translate traduce"
 }
 
 # Redespliegue reproducible sin reinyectar secretos: reconstruye las imágenes
 # con el TAG actual, actualiza los 3 servicios conservando env/CORS/límites y
-# termina con el smoke estricto. Si /v1/templates no da 200 con 2 plantillas,
+# termina con el smoke estricto. Si /v1/templates no da 200 con 2 plantillas o
+# si /v1/endorse/translate no traduce (200 + dynamicData + eventAppliedEntities),
 # el comando falla (no se declara el entorno sano).
 cmd_redeploy() {
   require_gcloud
@@ -694,7 +794,8 @@ Uso: ./deploy-gcp.sh <subcomando>
   build           Build+push de endorsements y routes
   deploy          Despliega backends y frontend en Cloud Run + smoke estricto
   redeploy        Build+deploy de los 3 conservando env/CORS + smoke estricto
-  smoke           Exige /v1/templates → 200 con EXACTAMENTE 2 plantillas
+  smoke           Exige /v1/templates → 200 con 2 plantillas y
+                  POST /v1/endorse/translate → 200 (traducción real)
   urls            Imprime las URLs públicas
   update-cors     Fija CORS_ORIGINS de los backends a la URL larga canónica del frontend
   logs [servicio] Logs recientes (por defecto endorsements)
@@ -748,4 +849,9 @@ main() {
   esac
 }
 
-main "$@"
+# Se ejecuta como script, pero admite `source` sin disparar `main`: así la prueba
+# de dientes de `smoke_translate` ejercita EXACTAMENTE el mismo código que corre
+# en producción, en lugar de una copia que podría divergir.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi
