@@ -102,12 +102,19 @@ export async function buildServer(deps: ServerDependencies): Promise<Server> {
       // Boom envuelve el segundo argumento en `data`: se desanida para que el
       // cliente reciba siempre `details` con la misma forma.
       const data = response.data as { details?: unknown } | undefined;
+      // Hapi emite el 403 de scope con el texto en inglés; el envelope del
+      // proyecto responde en español con el mismo código y la misma forma.
+      const message = isServerError
+        ? 'Error interno del servidor'
+        : status === 403 && response.message === 'Insufficient scope'
+          ? 'El token no tiene un scope autorizado para este endpoint'
+          : response.message;
 
       return h
         .response({
           error: {
             code: boomErrorCodes[status] ?? (isServerError ? 'INTERNAL_ERROR' : 'HTTP_ERROR'),
-            message: isServerError ? 'Error interno del servidor' : response.message,
+            message,
             details: isServerError ? null : (data?.details ?? data ?? null),
           },
         })

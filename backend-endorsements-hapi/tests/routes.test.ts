@@ -1,6 +1,7 @@
 import type { Server } from '@hapi/hapi';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildServer } from '../src/app';
+import { issueToken } from '../src/security/jwt';
 import {
   exampleRequest,
   expectedPayload,
@@ -204,5 +205,25 @@ describe('token de demo', () => {
 
     expect(response.statusCode).toBe(400);
     expect((response.result as { error: { code: string } }).error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('scope exigido por la ruta', () => {
+  it('rechaza con 403 y mensaje en español un token firmado con otro scope', async () => {
+    // Firma directa con el mismo secreto: demuestra que la comprobación no
+    // depende de que el emisor de demo se porte bien.
+    const { token } = issueToken('demo-client', 'admin:all', JWT_SECRET, 3600);
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/v1/endorse/translate',
+      headers: { authorization: `Bearer ${token}` },
+      payload: exampleRequest,
+    });
+
+    expect(response.statusCode).toBe(403);
+    const body = response.result as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('FORBIDDEN');
+    expect(body.error.message).toBe('El token no tiene un scope autorizado para este endpoint');
   });
 });

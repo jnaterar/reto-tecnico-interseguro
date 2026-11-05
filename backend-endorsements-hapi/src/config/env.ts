@@ -121,9 +121,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // Postgres gestionado (Cloud SQL por IP pública, Render) exige TLS.
     dbSsl: parseBoolean(env.DB_SSL, false),
     jwtSecret,
-    // En local el token puede durar más para no interrumpir la demo; en el
-    // despliegue se reduce a 15 minutos (ver deploy-gcp.sh).
-    jwtTtlSeconds: parseNumber(env.JWT_TTL_SECONDS, nodeEnv === 'production' ? 900 : 3600),
+    // Una hora en todos los entornos: el jurado no debería tener que re-emitir
+    // el token, y el riesgo queda acotado por el scope (endorse:translate) y la
+    // lista blanca de CORS. deploy-gcp.sh envía el mismo valor.
+    jwtTtlSeconds: parseNumber(env.JWT_TTL_SECONDS, 3600),
     // En producción el emisor de tokens de demo queda apagado salvo opt-in.
     enableDemoToken: parseBoolean(env.ENABLE_DEMO_TOKEN, nodeEnv !== 'production'),
     corsOrigins: parseOrigins(env.CORS_ORIGINS, nodeEnv),
