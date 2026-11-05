@@ -60,7 +60,7 @@ export function Navbar({ health }: NavbarProps): ReactElement {
           <NavLink
             to="/retos"
             className={({ isActive }) =>
-              `nav-link nav-cta-button ${isActive ? 'is-active' : ''}`
+              `nav-link ${isActive ? 'is-active' : ''}`
             }
             onClick={closeMenu}
           >

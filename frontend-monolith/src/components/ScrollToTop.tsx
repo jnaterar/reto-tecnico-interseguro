@@ -13,3 +13,4 @@ export function ScrollToTop(): ReactElement | null {
 
   return null;
 }
+

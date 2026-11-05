@@ -50,15 +50,16 @@ export function ProfilePage(): ReactElement {
             jhonder.natera@gmail.com
           </a>
           <a
-            href="https://linkedin.com/in/jhondernatera"
+            href="https://linkedin.com/in/jhonder-natera"
             target="_blank"
             rel="noopener noreferrer"
             className="ghost-button profile-contact-btn"
           >
-            linkedin.com/in/jhondernatera
+            linkedin.com/in/jhonder-natera
           </a>
         </div>
       </div>
     </div>
   );
 }
+

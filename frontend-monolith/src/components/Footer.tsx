@@ -39,11 +39,11 @@ export function Footer(): ReactElement {
               </li>
               <li>
                 <a
-                  href="https://linkedin.com/in/jhondernatera"
+                  href="https://linkedin.com/in/jhonder-natera"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  linkedin.com/in/jhondernatera
+                  linkedin.com/in/jhonder-natera
                 </a>
               </li>
               <li>
