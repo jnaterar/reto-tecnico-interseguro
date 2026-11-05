@@ -59,22 +59,6 @@ export function DocumentationPage(): ReactElement {
         <p className="muted doc-subtitle">El por qué detrás de cada decisión, explicado simple.</p>
       </header>
 
-      {/* Índice sticky con chips ancla */}
-      <nav className="doc-nav-chips" aria-label="Índice de retos">
-        <a href="#reto-1" className="doc-nav-chip chip-r1">
-          <span className="chip-dot dot-r1" aria-hidden="true" />
-          Reto 1 · Endosos
-        </a>
-        <a href="#reto-2" className="doc-nav-chip chip-r2">
-          <span className="chip-dot dot-r2" aria-hidden="true" />
-          Reto 2 · Rutas
-        </a>
-        <a href="#reto-3" className="doc-nav-chip chip-r3">
-          <span className="chip-dot dot-r3" aria-hidden="true" />
-          Reto 3 · Arquitectura
-        </a>
-      </nav>
-
       {/* ARTÍCULO RETO 1 */}
       <article id="reto-1" className="challenge-article challenge-r1">
         <header className="article-header">

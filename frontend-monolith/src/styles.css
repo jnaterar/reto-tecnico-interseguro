@@ -682,7 +682,7 @@ p {
 }
 
 .secondary-stat-card .stat-number {
-  font-size: clamp(1.6rem, 2.2vw, 2rem);
+  font-size: clamp(1.2rem, 1.8vw, 1.6rem);
   font-weight: 800;
   color: var(--primary);
   line-height: 1.1;
@@ -1623,54 +1623,6 @@ button.code-copy-button.is-copied,
   margin-top: 6px;
 }
 
-.doc-nav-chips {
-  position: sticky;
-  top: 76px;
-  z-index: 50;
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 12px 16px;
-  margin-bottom: 36px;
-  background: rgba(248, 250, 252, 0.92);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow-sm);
-}
-
-.doc-nav-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  font-size: 0.84rem;
-  font-weight: 700;
-  color: var(--text);
-  text-decoration: none;
-  transition: all 0.15s ease;
-}
-
-.doc-nav-chip:hover {
-  border-color: var(--primary);
-  color: var(--primary);
-  transform: translateY(-1px);
-}
-
-.chip-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.dot-r1 { background: #1f4fd8; }
-.dot-r2 { background: #7c3aed; }
-.dot-r3 { background: #0f9d76; }
-
 .challenge-article {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -2384,11 +2336,5 @@ button.code-copy-button.is-copied,
 
   .tech-grid {
     grid-template-columns: 1fr;
-  }
-
-  .doc-nav-chips {
-    top: 68px;
-    flex-direction: column;
-    gap: 6px;
   }
 }
