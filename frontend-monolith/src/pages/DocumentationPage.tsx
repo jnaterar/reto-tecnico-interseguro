@@ -397,28 +397,55 @@ curl -s -X POST https://routes-919990628042.us-central1.run.app/v1/routes/optima
         </details>
       </article>
 
-      {/* Bloque: Notas de honestidad técnica */}
-      <div className="honesty-notes-card">
-        <div>
-          <h3>Notas de honestidad técnica</h3>
-          <ul className="honesty-list">
-            <li>
-              <strong>Variables de entorno vs Secret Manager:</strong> Configuración por variables de entorno en lugar de Secret Manager (trade-off aceptado por el alcance; se documenta la rotación de credenciales post-reto).
-            </li>
-            <li>
-              <strong>Token demo con TTL:</strong> El token demo tiene un TTL limitado por seguridad.
-            </li>
-            <li>
-              <strong>Alcance del Reto 3:</strong> El Reto 3 entrega <strong>diseño</strong> de arquitectura; no implementación en código en este alcance.
-            </li>
-          </ul>
-        </div>
-      </div>
 
-      {/* Sub-bloque: Stack técnico */}
-      <section className="tech-stack-section" aria-label="Stack tecnológico">
-        <h3 className="section-subtitle">Stack técnico</h3>
-        <p className="muted">Componentes nativos utilizados en el desarrollo y despliegue del reto:</p>
+      {/* Bloque: Resumen de infraestructura */}
+      <article id="infraestructura" className="challenge-article challenge-infra">
+        <header className="article-header">
+          <div className="article-tag-row">
+            <span className="article-badge infra-badge">Infraestructura · Despliegue</span>
+            <span className="muted small">Google Cloud Run · Docker Multi-Stage</span>
+          </div>
+          <h2>Resumen de Infraestructura</h2>
+          <p className="article-desc">
+            Tres componentes y una arquitectura pensada para producción: traducción de endosos, cálculo de rutas óptimas y diseño arquitectónico para eliminar duplicidad de desembolsos. Construido con foco en clean architecture, seguridad y experiencia de usuario.
+          </p>
+        </header>
+
+        {/* Tres Stat Cards con datos verificados */}
+        <div className="secondary-stats-grid">
+          <div className="secondary-stat-card">
+            <span className="stat-number">3</span>
+            <span className="stat-label">Componentes desplegados en Google Cloud Run</span>
+            <span className="stat-hint">us-central1 · Contenedores Docker multi-stage</span>
+          </div>
+
+          <div className="secondary-stat-card">
+            <span className="stat-number">2+1</span>
+            <span className="stat-label">Servicios backend + 1 frontend desacoplado</span>
+            <span className="stat-hint">Node (Hapi) · Go (Dijkstra) · React</span>
+          </div>
+
+          <div className="secondary-stat-card">
+            <span className="stat-number">&lt; 200 ms</span>
+            <span className="stat-label">Latencia de referencia en procesamiento</span>
+            <span className="stat-hint">SLA objetivo del perfil técnico</span>
+          </div>
+        </div>
+      </article>
+
+      {/* Bloque: Stack técnico */}
+      <article id="stack-tecnico" className="challenge-article challenge-stack">
+        <header className="article-header">
+          <div className="article-tag-row">
+            <span className="article-badge stack-badge">Stack Técnico</span>
+            <span className="muted small">Arquitectura Políglota &amp; Herramientas</span>
+          </div>
+          <h2>Stack Tecnológico</h2>
+          <p className="article-desc">
+            Componentes nativos utilizados en el desarrollo y despliegue del reto:
+          </p>
+        </header>
+
         <div className="tech-grid">
           <div className="tech-grid-item">
             <strong>Frontend</strong>
@@ -453,9 +480,10 @@ curl -s -X POST https://routes-919990628042.us-central1.run.app/v1/routes/optima
             <span>draw.io</span>
           </div>
         </div>
-      </section>
+      </article>
 
-      {/* Sub-bloque: Cómo reproducir en 3 pasos */}
+
+      {/* Bloque: Cómo reproducir en 3 pasos */}
       <section className="reproduce-section" aria-label="Instrucciones de reproducción local">
         <h3 className="section-subtitle">Cómo reproducir en 3 pasos</h3>
         <p className="muted">Comandos mínimos para clonar, desplegar y smoke test:</p>
@@ -474,6 +502,25 @@ curl -s http://localhost:8081/health && echo " -> Rutas OK"
 curl -s http://localhost:8082/health && echo " -> Endosos OK"`}
         />
       </section>
+
+
+      {/* Bloque: Notas de honestidad técnica */}
+      <section className="honesty-notes-card">
+        <div>
+          <h3>Notas de honestidad técnica</h3>
+          <ul className="honesty-list">
+            <li>
+              <strong>Variables de entorno vs Secret Manager:</strong> Configuración por variables de entorno en lugar de Secret Manager (trade-off aceptado por el alcance; se documenta la rotación de credenciales post-reto).
+            </li>
+            <li>
+              <strong>Token demo con TTL:</strong> El token demo tiene un TTL limitado por seguridad.
+            </li>
+            <li>
+              <strong>Alcance del Reto 3:</strong> El Reto 3 entrega <strong>diseño</strong> de arquitectura; no implementación en código en este alcance.
+            </li>
+          </ul>
+        </div>
+      </section>      
     </div>
   );
 }

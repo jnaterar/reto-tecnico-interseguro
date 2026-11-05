@@ -618,46 +618,6 @@ p {
   color: #0f172a;
 }
 
-/* Bloque secundario de apoyo DEBAJO de los retos (h3 en gris medio) */
-.secondary-architecture-block {
-  margin-top: clamp(48px, 7vh, 72px);
-  padding: clamp(24px, 4vw, 36px);
-  border-radius: var(--radius);
-  background: #ffffff;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-}
-
-.secondary-arch-header {
-  margin-bottom: 24px;
-  max-width: 900px;
-}
-
-.secondary-arch-tag {
-  display: inline-block;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-}
-
-.secondary-arch-title {
-  font-size: clamp(1.1rem, 1.4vw, 1.3rem);
-  font-weight: 600;
-  color: #475569;
-  margin-bottom: 10px;
-  line-height: 1.4;
-}
-
-.secondary-arch-desc {
-  font-size: 0.92rem;
-  color: var(--text-muted);
-  line-height: 1.6;
-  margin: 0;
-}
-
 .secondary-stats-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -667,38 +627,39 @@ p {
 .secondary-stat-card {
   background: var(--surface-muted);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 20px 18px;
+  border-radius: 12px;
+  padding: 20px 22px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   text-align: left;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .secondary-stat-card:hover {
   transform: translateY(-2px);
+  border-color: #cbd5e1;
   box-shadow: var(--shadow-sm);
 }
 
 .secondary-stat-card .stat-number {
-  font-size: clamp(1.2rem, 1.8vw, 1.6rem);
+  font-size: clamp(1.35rem, 2vw, 1.75rem);
   font-weight: 800;
-  color: var(--primary);
+  color: #0284c7;
   line-height: 1.1;
   margin-bottom: 6px;
 }
 
 .secondary-stat-card .stat-label {
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   font-weight: 700;
-  color: var(--text);
+  color: #0f172a;
   line-height: 1.35;
   margin-bottom: 4px;
 }
 
 .secondary-stat-card .stat-hint {
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
   line-height: 1.4;
 }
@@ -1639,6 +1600,8 @@ button.code-copy-button.is-copied,
 .challenge-r1 { border-left-color: #1f4fd8; }
 .challenge-r2 { border-left-color: #7c3aed; }
 .challenge-r3 { border-left-color: #0f9d76; }
+.challenge-infra { border-left-color: #0284c7; }
+.challenge-stack { border-left-color: #6366f1; }
 
 .article-header {
   display: flex;
@@ -1652,6 +1615,13 @@ button.code-copy-button.is-copied,
   letter-spacing: -0.02em;
   color: #0f172a;
   line-height: 1.3;
+  margin: 0;
+}
+
+.article-desc {
+  font-size: 0.93rem;
+  line-height: 1.6;
+  color: var(--text-muted);
   margin: 0;
 }
 
@@ -1674,6 +1644,8 @@ button.code-copy-button.is-copied,
 .r1-badge { background: #dbeafe; color: #1e40af; }
 .r2-badge { background: #ede9fe; color: #6d28d9; }
 .r3-badge { background: #dcfce7; color: #166534; }
+.infra-badge { background: #e0f2fe; color: #0369a1; }
+.stack-badge { background: #e0e7ff; color: #4338ca; }
 
 .simple-words-card {
   display: flex;
@@ -1720,6 +1692,7 @@ button.code-copy-button.is-copied,
 }
 
 .tech-pills-row {
+  margin-top: 0.3rem;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -1842,7 +1815,7 @@ button.code-copy-button.is-copied,
   border-radius: var(--radius);
   background: #fffbeb;
   border: 1px solid #fde68a;
-  margin-bottom: 32px;
+  margin-top: 32px;
   align-items: flex-start;
 }
 
@@ -1864,35 +1837,40 @@ button.code-copy-button.is-copied,
   line-height: 1.55;
 }
 
-.tech-stack-section {
-  padding: 24px 0 32px;
-}
-
 .tech-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 16px;
+  gap: 14px;
 }
 
 .tech-grid-item {
   background: var(--surface-muted);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 14px 16px;
+  border-radius: 12px;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.tech-grid-item:hover {
+  transform: translateY(-2px);
+  border-color: #cbd5e1;
+  box-shadow: var(--shadow-sm);
 }
 
 .tech-grid-item strong {
-  font-size: 0.86rem;
-  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #4f46e5;
 }
 
 .tech-grid-item span {
-  font-size: 0.88rem;
-  color: var(--text);
+  font-size: 0.92rem;
+  color: #0f172a;
   font-weight: 600;
 }
 

@@ -81,40 +81,6 @@ export function RetosPage(): ReactElement {
         {activeTab === 'routes' && <RoutesTab />}
         {activeTab === 'architecture' && <ArchitectureTab />}
       </main>
-
-      {/* Corrección 5: Bloque secundario de apoyo DEBAJO de los retos (reducido a h3 en gris medio) */}
-      <aside className="secondary-architecture-block" aria-label="Contexto de arquitectura del despliegue">
-        <div className="secondary-arch-header">
-          <span className="secondary-arch-tag">Resumen de infraestructura</span>
-          <h3 className="secondary-arch-title">
-            Arquitectura Cloud &amp; Soluciones de Alto Rendimiento
-          </h3>
-          <p className="secondary-arch-desc">
-            Tres componentes y una arquitectura pensada para producción: traducción de endosos, cálculo de rutas óptimas y diseño arquitectónico para eliminar duplicidad de desembolsos. Construido con foco en clean architecture, seguridad y experiencia de usuario.
-          </p>
-        </div>
-
-        {/* 3 Stat Cards con datos verificados */}
-        <div className="secondary-stats-grid">
-          <div className="secondary-stat-card">
-            <span className="stat-number">3</span>
-            <span className="stat-label">Componentes desplegados en Google Cloud Run</span>
-            <span className="stat-hint">us-central1 · Contenedores Docker multi-stage</span>
-          </div>
-
-          <div className="secondary-stat-card">
-            <span className="stat-number">2+1</span>
-            <span className="stat-label">Servicios backend + 1 frontend desacoplado</span>
-            <span className="stat-hint">Node (Hapi) · Go (Dijkstra) · React</span>
-          </div>
-
-          <div className="secondary-stat-card">
-            <span className="stat-number">&lt; 200 ms</span>
-            <span className="stat-label">Latencia de referencia en procesamiento</span>
-            <span className="stat-hint">SLA objetivo del perfil técnico</span>
-          </div>
-        </div>
-      </aside>
     </div>
   );
 }
