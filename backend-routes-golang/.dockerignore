@@ -1,5 +1,11 @@
-# Binarios locales y documentación no forman parte del build.
+# El build solo necesita go.mod, cmd/ e internal/.
+# Se excluye documentación, tests y binarios locales para reducir el contexto.
 *.md
+*_test.go
 *.exe
+*.out
 bin/
+coverage/
 .DS_Store
+Dockerfile
+.dockerignore

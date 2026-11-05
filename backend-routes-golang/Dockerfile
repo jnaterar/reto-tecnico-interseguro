@@ -10,6 +10,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/routes-
  && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/healthcheck ./cmd/healthcheck
 
 # --- runtime stage ---
+# Imagen final distroless: sin shell, sin paquetes del sistema y con usuario
+# `nonroot` por defecto. El binario lee PORT con os.Getenv, tal como lo inyecta
+# Cloud Run; 8081 es solo el valor por defecto para docker-compose/local.
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=builder /out/routes-server /routes-server
