@@ -262,6 +262,25 @@ export function EndorseTab() {
   const [isTemplateLoading, setIsTemplateLoading] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isErImageMissing, setIsErImageMissing] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Cerrar la modal de JSON estructurado al presionar Escape
+  useEffect(() => {
+    if (!isModalOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setIsModalOpen(false);
+      }
+    };
+
+    globalThis.addEventListener('keydown', handleKeyDown);
+    return () => {
+      globalThis.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isModalOpen]);
 
   // Descarta respuestas fuera de orden si el usuario cambia de plantilla rápido.
   const templateRequestId = useRef(0);
@@ -467,12 +486,18 @@ export function EndorseTab() {
     setIsDropdownOpen(false);
     setSelectedKey(templateKey(next));
 
-    // El selector manda también sobre el payload: cambiar de producto reescribe
-    // el JSON y vuelve a traducir, así se ve la plantilla aplicada en acción.
+    // El selector actualiza el payload de ejemplo para reflejar el producto elegido,
+    // pero NO dispara la traducción automáticamente: la llamada se realiza únicamente
+    // cuando el usuario presiona el botón «Traducir».
     const nextInput = withSelection(rawInput, next);
     setRawInput(nextInput);
 
-    await Promise.all([applyTemplate(next), runTranslate(nextInput)]);
+    // Limpiamos la traducción anterior para evitar estados visuales inconsistentes
+    setResult(null);
+    setError(null);
+    setElapsedMs(null);
+
+    await applyTemplate(next);
   };
 
   const handleNativeSelectChange = (event: ChangeEvent<HTMLSelectElement>): void => {
@@ -530,7 +555,7 @@ export function EndorseTab() {
           {error && <ErrorPanel error={error} />}
         </form>
 
-        <section className="card">
+        <section className="card result-card">
           <header className="card-header">
             <div>
               <h2>JSON Estructurado para el Core</h2>
@@ -539,19 +564,35 @@ export function EndorseTab() {
                 el orden de claves de un objeto.
               </p>
             </div>
-            {elapsedMs !== null && <span className="badge">{elapsedMs.toFixed(0)} ms</span>}
+            <div className="card-header-actions">
+              {elapsedMs !== null && <span className="badge">{elapsedMs.toFixed(0)} ms</span>}
+              {result && (
+                <button
+                  type="button"
+                  className="modal-open-btn"
+                  onClick={() => setIsModalOpen(true)}
+                  title="Ampliar JSON a pantalla completa"
+                  aria-label="Ver JSON en modal a pantalla completa"
+                >
+                  <span className="expand-icon" aria-hidden="true">⤢</span>
+                  <span>Ver en Modal</span>
+                </button>
+              )}
+            </div>
           </header>
 
           {result ? (
-            <>
+            <div className="result-content-container">
               <div className="summary-row">
                 <span className="chip">{result.eventEntity.dynamicData.length} dynamicData</span>
                 <span className="chip">{result.eventAppliedEntities.length} eventos</span>
                 <span className="chip">{result.productEntity.description}</span>
                 <span className="chip">{result.currency.description}</span>
               </div>
-              <JsonBlock value={result} label="Respuesta" />
-            </>
+              <div className="result-json-scroll-pane">
+                <JsonBlock value={result} label="Respuesta" />
+              </div>
+            </div>
           ) : (
             <div className="empty-state">
               <p>Pulsa «Traducir» para ver el JSON estructurado.</p>
@@ -920,6 +961,52 @@ export function EndorseTab() {
           caption={ER_CAPTION}
           onClose={() => setIsLightboxOpen(false)}
         />
+      )}
+
+      {/* Modal a pantalla completa para inspección profunda del JSON del Core */}
+      {isModalOpen && result && (
+        <div
+          className="json-modal-backdrop"
+          onClick={() => setIsModalOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="json-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-json-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="json-modal-header">
+              <div>
+                <h3 id="modal-json-title" className="json-modal-title">
+                  JSON Estructurado para el Core
+                </h3>
+                <div className="modal-summary-chips">
+                  <span className="chip">{result.eventEntity.dynamicData.length} dynamicData</span>
+                  <span className="chip">{result.eventAppliedEntities.length} eventos</span>
+                  <span className="chip">{result.productEntity.description}</span>
+                  <span className="chip">{result.currency.description}</span>
+                  {elapsedMs !== null && <span className="badge">{elapsedMs.toFixed(0)} ms</span>}
+                </div>
+              </div>
+              <div className="modal-header-btns">
+                <button
+                  type="button"
+                  className="ghost-button modal-close-btn"
+                  onClick={() => setIsModalOpen(false)}
+                  aria-label="Cerrar modal"
+                >
+                  ✕ Cerrar (Esc)
+                </button>
+              </div>
+            </header>
+
+            <div className="json-modal-body">
+              <JsonBlock value={result} label="Respuesta Estructurada Completa" />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

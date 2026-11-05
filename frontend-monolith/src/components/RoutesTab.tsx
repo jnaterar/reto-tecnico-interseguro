@@ -160,7 +160,10 @@ export function RoutesTab() {
 
         {/* Inspector interactivo y accesible del payload HTTP enviado al backend */}
         <details className="payload-inspector">
-          <summary className="payload-inspector-summary">
+          <summary
+            className="payload-inspector-summary"
+            title="Haz clic para ver u ocultar el payload JSON enviado al microservicio Go"
+          >
             <div className="payload-inspector-meta">
               <span className="payload-method-pill">POST</span>
               <span className="payload-inspector-title">Payload de la petición</span>
@@ -168,9 +171,12 @@ export function RoutesTab() {
                 Topología dinámica · {DISTRICTS.length} distritos
               </span>
             </div>
-            <span className="payload-chevron" aria-hidden="true">
-              ▾
-            </span>
+            <div className="payload-toggle-cta">
+              <span className="payload-toggle-label">Ver payload</span>
+              <span className="payload-chevron" aria-hidden="true">
+                ▾
+              </span>
+            </div>
           </summary>
           <div className="payload-inspector-content">
             <p className="payload-inspector-hint">

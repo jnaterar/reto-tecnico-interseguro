@@ -826,6 +826,8 @@ p {
 
 .panel-grid > .card {
   min-height: clamp(440px, 56vh, 680px);
+  display: flex;
+  flex-direction: column;
 }
 
 .routes-card {
@@ -834,8 +836,14 @@ p {
 
 @media (min-width: 901px) {
   .panel-grid > .card {
-    min-height: clamp(500px, 62vh, 760px);
+    min-height: clamp(480px, 58vh, 680px);
     height: auto;
+  }
+
+  /* En EndorseTab: altura fija estricta para que el JSON del Core no estire la pantalla */
+  .endorse-stack .panel-grid > .card {
+    height: clamp(520px, 62vh, 700px);
+    max-height: clamp(520px, 62vh, 700px);
   }
 }
 
@@ -1714,6 +1722,7 @@ select:focus {
 .payload-inspector {
   margin-top: 18px;
   border: 1px solid var(--border);
+  border-left: 3.5px solid #2563eb;
   border-radius: 12px;
   background: #f8fafc;
   overflow: hidden;
@@ -1785,16 +1794,43 @@ select:focus {
   border-radius: 999px;
 }
 
+.payload-toggle-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 0.74rem;
+  font-weight: 700;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.payload-inspector:hover .payload-toggle-cta {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1e40af;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.12);
+}
+
+.payload-inspector[open] .payload-toggle-cta {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
 .payload-chevron {
   font-size: 0.8rem;
-  color: #64748b;
+  color: inherit;
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  margin-left: 8px;
 }
 
 .payload-inspector[open] .payload-chevron {
   transform: rotate(180deg);
-  color: var(--primary);
 }
 
 .payload-inspector-content {
@@ -1837,6 +1873,193 @@ select:focus {
 .payload-json-wrap .json-block pre {
   max-height: 190px;
   overflow-y: auto;
+}
+
+/* ==========================================================================
+   ACCIONES DE TARJETA, CONTENCIÓN Y MODAL PARA JSON ESTRUCTURADO
+   ========================================================================== */
+
+.card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.modal-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.modal-open-btn:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1e40af;
+  transform: translateY(-1px);
+}
+
+.modal-open-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.expand-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+/* Contención estricta del resultado en EndorseTab */
+.result-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.result-content-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.result-json-scroll-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.result-json-scroll-pane .json-block {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.result-json-scroll-pane .json-block pre {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Modal a pantalla completa para inspección del JSON estructurado */
+.json-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 3vw, 40px);
+  animation: modalFadeIn 0.15s ease-out;
+}
+
+.json-modal-dialog {
+  width: 100%;
+  max-width: 1080px;
+  height: 88vh;
+  max-height: 900px;
+  background: #ffffff;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.json-modal-header {
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: #f8fafc;
+  flex-wrap: wrap;
+}
+
+.json-modal-title {
+  margin: 0 0 6px 0;
+  font-size: 1.15rem;
+  font-weight: 750;
+  color: #0f172a;
+}
+
+.modal-summary-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.modal-header-btns {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modal-close-btn {
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-weight: 650;
+  border-radius: 8px;
+}
+
+.json-modal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 20px;
+  background: #0f172a;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.json-modal-body .json-block {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  border: none;
+  background: transparent;
+}
+
+.json-modal-body .json-block pre {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  font-size: clamp(12px, 0.95vw, 13.5px);
+  line-height: 1.55;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .panel-grid > .card > .json-block {
