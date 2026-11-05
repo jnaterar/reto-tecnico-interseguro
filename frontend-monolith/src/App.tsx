@@ -1,39 +1,39 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type KeyboardEvent, type ReactElement } from 'react';
 import { checkHealth, type HealthStatus } from './api/http';
+import { ArchitectureTab } from './components/ArchitectureTab';
+import { DocumentationSection } from './components/DocumentationSection';
 import { EndorseTab } from './components/EndorseTab';
+import { Footer } from './components/Footer';
+import { Hero } from './components/Hero';
+import { Navbar } from './components/Navbar';
+import { ProfileSection } from './components/ProfileSection';
 import { RoutesTab } from './components/RoutesTab';
 import { ENDORSE_API_BASE, ROUTES_API_BASE } from './config';
 
-type TabId = 'endorse' | 'routes';
+export type TabId = 'endorse' | 'routes' | 'architecture';
 
-const TABS: ReadonlyArray<{ id: TabId; label: string; hint: string }> = [
+interface TabItem {
+  id: TabId;
+  label: string;
+  hint: string;
+}
+
+const TABS: ReadonlyArray<TabItem> = [
   { id: 'endorse', label: 'Traductor de endosos', hint: 'Reto 1 · Node + Hapi' },
   { id: 'routes', label: 'Ruta óptima de grúa', hint: 'Reto 2 · Go + Dijkstra' },
+  { id: 'architecture', label: 'Arquitectura – Préstamos', hint: 'Reto 3 · Diseño Cloud' },
 ];
 
-interface HealthMap {
+export interface HealthMap {
   endorse: HealthStatus | null;
   routes: HealthStatus | null;
 }
 
-function HealthPill({ label, status }: { label: string; status: HealthStatus | null }) {
-  const state = status === null ? 'unknown' : status.ok ? 'ok' : 'down';
-  const text = status === null ? 'verificando' : status.detail;
-
-  return (
-    <span className={`health-pill health-${state}`} title={`${label}: ${text}`}>
-      <span className="health-dot" aria-hidden="true" />
-      {label}
-    </span>
-  );
-}
-
-export function App() {
+export function App(): ReactElement {
   const [activeTab, setActiveTab] = useState<TabId>('endorse');
   const [health, setHealth] = useState<HealthMap>({ endorse: null, routes: null });
 
-  // Sondeo periódico de salud: el frontend demuestra integración real con
-  // ambos servicios sin bloquear la UI.
+  // Sondeo periódico de salud sin bloquear la interfaz
   useEffect(() => {
     let cancelled = false;
 
@@ -55,48 +55,88 @@ export function App() {
     };
   }, []);
 
+  // Navegación accesible por teclado entre pestañas con flechas izquierda / derecha
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, currentIndex: number): void => {
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight') {
+      nextIndex = (currentIndex + 1) % TABS.length;
+    } else if (event.key === 'ArrowLeft') {
+      nextIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+    } else {
+      return;
+    }
+
+    event.preventDefault();
+    const targetTab = TABS[nextIndex];
+    if (targetTab) {
+      setActiveTab(targetTab.id);
+      const nextBtn = document.getElementById(`tab-btn-${targetTab.id}`);
+      nextBtn?.focus();
+    }
+  };
+
   return (
-    <div className="app-shell page-wrap">
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">Reto Técnico · Technical Lead</p>
-          <h1>Interseguro</h1>
-          <p className="muted">
-            Dos servicios, un contrato claro: traducir endosos para el core y encontrar la grúa
-            más cercana al siniestro.
-          </p>
+    <div className="landing-layout">
+      {/* 1. Header con navegación sticky y glassmorphism */}
+      <Navbar health={health} />
+
+      {/* 2. Hero Section (#inicio) */}
+      <Hero />
+
+      {/* 3. Retos Técnicos Section (#retos) ⭐ */}
+      <section id="retos" className="challenges-section" aria-label="Retos Técnicos Interactivos">
+        <div className="page-wrap">
+          <header className="challenges-section-header">
+            <div className="challenges-title-group">
+              <p className="eyebrow">Demostración en Vivo</p>
+              <h2 className="section-title">Retos Técnicos en Producción</h2>
+              <p className="muted challenges-subtitle">
+                Interactúa directamente con los microservicios desplegados en Google Cloud Run y explora la arquitectura para eliminar duplicidad de desembolsos.
+              </p>
+            </div>
+          </header>
+
+          {/* Tab-bar accesible con 3 pestañas */}
+          <nav className="tab-bar tab-bar-prominent" role="tablist" aria-label="Pestañas de los Retos Técnicos">
+            {TABS.map((tab, index) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  id={`tab-btn-${tab.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls={`tabpanel-${tab.id}`}
+                  tabIndex={isActive ? 0 : -1}
+                  className={`tab ${isActive ? 'is-active' : ''}`}
+                  onClick={() => setActiveTab(tab.id)}
+                  onKeyDown={(event) => handleTabKeyDown(event, index)}
+                >
+                  <span className="tab-label">{tab.label}</span>
+                  <span className="tab-hint">{tab.hint}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Panel activo */}
+          <main id={`tabpanel-${activeTab}`} role="tabpanel" aria-labelledby={`tab-btn-${activeTab}`}>
+            {activeTab === 'endorse' && <EndorseTab />}
+            {activeTab === 'routes' && <RoutesTab />}
+            {activeTab === 'architecture' && <ArchitectureTab />}
+          </main>
         </div>
-        <div className="health-group" aria-label="Estado de los servicios">
-          <HealthPill label="Endosos :8082" status={health.endorse} />
-          <HealthPill label="Rutas :8081" status={health.routes} />
-        </div>
-      </header>
+      </section>
 
-      <nav className="tab-bar" role="tablist" aria-label="Retos">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.id}
-            className={`tab ${activeTab === tab.id ? 'is-active' : ''}`}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            <span className="tab-label">{tab.label}</span>
-            <span className="tab-hint">{tab.hint}</span>
-          </button>
-        ))}
-      </nav>
+      {/* 4. Documentación + Stack Section (#documentacion) */}
+      <DocumentationSection />
 
-      <main role="tabpanel">{activeTab === 'endorse' ? <EndorseTab /> : <RoutesTab />}</main>
+      {/* 5. Perfil del Autor (#perfil) */}
+      <ProfileSection />
 
-      <footer className="app-footer">
-        <span>
-          Reto 1: Hapi + TypeORM + plantillas en BD · Reto 2: Go + Dijkstra sobre grafo no
-          dirigido
-        </span>
-        <span>Reto 3: arquitectura en architecture-drawio/</span>
-      </footer>
+      {/* 6. Footer Corporativo */}
+      <Footer />
     </div>
   );
 }
