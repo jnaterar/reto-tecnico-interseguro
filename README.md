@@ -860,7 +860,9 @@ está en [§4](#errores-del-reto-2).
 │   ├── to-be.png                # export 2× con fondo blanco (3200×3200)
 │   └── render_drawio.py         # .drawio → PNG con Pillow (sin drawio CLI)
 └── docs/
-    └── entrega-talsory.md       # correo de entrega al reclutador
+    ├── entrega-talsory.md       # correo de entrega al reclutador
+    ├── auditoria-seguridad.md   # auditoría DevSecOps: matriz de riesgos, plan de corrección y rollback
+    └── validacion-local.md      # guía de validación local pre-merge y pre-despliegue
 ```
 
 ---
@@ -886,3 +888,5 @@ está en [§4](#errores-del-reto-2).
 | Grep de hardcode (`ProductosVida\\|TES008\\|EndososSimplesSACRumbo` en `src/`, excluyendo `seed`) | OK — sin resultados: el negocio vive en la plantilla, no en el código |
 | `python3 architecture-drawio/render_drawio.py` | OK — `as-is.png` (2240×1760) y `to-be.png` (3200×3200), fondo blanco opaco |
 | Despliegue en la nube (§8) | **ACTIVO** — 3 servicios Cloud Run (`us-central1`); smoke E2E `200` en Reto 1 y Reto 2, CORS con control positivo y negativo, frontend con indicadores operativos (ver [§0.1](#01-estado-del-despliegue-activo)) |
+
+El procedimiento reproducible para repetir toda esta verificación antes de fusionar o redesplegar está en [docs/validacion-local.md](docs/validacion-local.md): gates de dependencias, ciclo de Docker Compose, humo funcional end-to-end y criterios de aceptación.
