@@ -59,7 +59,7 @@ Ningún `FROM` fija digest: el build no es reproducible y la deriva de parches d
 
 **Conteo `npm audit` backend:** `{ critical: 2, high: 1, moderate: 6, total: 9 }`.
 **Conteo `npm audit` frontend:** `{ total: 0 }`.
-**Conteo `npm audit --omit=dev` (lo que realmente se despliega):** backend `{ moderate: 3 }`, todas en la cadena `typeorm@0.3.31 → glob@10.5.0 → minimatch`; frontend `{ total: 0 }`. Conclusión: las 2 críticas y la alta del árbol completo **no viajan a la imagen** (`npm ci --omit=dev` las excluye); el único hallazgo de producción es la cadena de TypeORM, y `npm audit` solo la corrige con `typeorm@1.1.2` (major).
+**Conteo `npm audit --omit=dev` (lo que realmente se despliega):** backend `{ moderate: 3 }` → **`{ total: 0 }` tras el commit 7**, las 3 estaban en la cadena `typeorm@0.3.31 → glob@10.5.0 → minimatch`; frontend `{ total: 0 }`. Conclusión: las 2 críticas y la alta del árbol completo **no viajan a la imagen** (`npm ci --omit=dev` las excluye); el único hallazgo de producción era la cadena de TypeORM, y `npm audit` solo la corrige con `typeorm@1.1.2` (major, ya aplicado).
 
 **Go:** sin `go.sum`; no hay módulos de terceros, por lo que la superficie se limita a stdlib + imagen base.
 
@@ -96,7 +96,7 @@ Ningún `FROM` fija digest: el build no es reproducible y la deriva de parches d
 | 3 | `build(frontend): nginx 1.29-alpine` | bajo | `docker compose build frontend` + `nginx -t` |
 | 4 | `chore: engines/.nvmrc + digest pinning` | nulo | `docker buildx imagetools inspect` |
 | 5 | `fix(db): verificación TLS estricta` | medio (operativo) | pre-check TLS contra Neon + smoke |
-| 6 | `deps: typeorm 1.1.2` | alto (major) | `npm run typecheck`, `npm test`, `npm run seed`, consulta real |
+| 6 | `deps: typeorm 1.1.2 + pg 8.23.1 + hapi 21.4.13` | alto (major) | **Hecho y validado** contra Neon (ver 5.2) |
 | 7 | `deps(dev): vitest 5 + vite 8` | alto (major) | `npm test` |
 | 8 | `harden: runtime sin npm, nginx no-root, CSP/HSTS` | medio | smoke completo |
 
@@ -113,6 +113,30 @@ El gate se implementó como script **aditivo y no bloqueante**, no como modifica
 ```
 
 Qué verifica: `npm audit --omit=dev` (bloqueante en modo `--strict`), `npm audit` del árbol completo (solo informativo, es donde viven las advisories de vitest/vite), `govulncheck ./...` sobre Go y `trivy image` con `--ignore-unfixed` sobre las tres imágenes. Los reportes quedan en `.sca/` (ignorado por git).
+
+### 5.2 Evidencia del salto a TypeORM 1.1.2
+
+Contexto del salto: `typeorm@0.3.31` no es una versión abandonada, es la **línea `legacy`** del paquete (`dist-tag legacy`), mientras que `latest` apunta a `1.1.2`. Es decir, la rama 0.3 sigue recibiendo parches, pero el advisory de `glob → minimatch` solo se resuelve en la línea 1.x.
+
+Sin cambios de código. TypeORM 1.1.2 sustituye la cadena `glob`/`minimatch` por `tinyglobby` y **conserva los decoradores legacy**, que es justo lo que declara el `tsconfig.json` del backend (`experimentalDecorators` + `emitDecoratorMetadata`, `module: commonjs`). El código de acceso a datos tampoco necesitó ajustes: [`TypeOrmTemplateRepository`](backend-endorsements-hapi/src/repositories/typeorm-template.repository.ts:17) usa `createQueryBuilder` con `innerJoinAndSelect`/`leftJoinAndSelect`, API estable entre ambas líneas.
+
+La validación no se apoyó en mocks: se ejecutó contra la base real de Neon, con la imagen construida con el lockfile nuevo.
+
+| Verificación | Comando | Resultado |
+|---|---|---|
+| Tipado | `npm run typecheck` | OK, sin errores |
+| Tests | `npm test` | 38/38 en verde |
+| Build | `npm run build` | OK (`dist/` generado) |
+| Lockfile con el npm del runtime | `docker build` sobre `node:22.23.4-slim` (npm 10.9.9) | `npm ci` OK |
+| Listado de plantillas | `listTemplates()` | 2 plantillas |
+| Plantilla AUTO | `findTemplate('AUTO','CAMBIO_FRECUENCIA')` | v1, 7 campos, 2 eventos |
+| Plantilla RUMBO | `findTemplate('RUMBO','CAMBIO_FRECUENCIA')` | v1, 12 campos, 2 eventos |
+| Endpoint de tokens | `GET /health`, `POST /v1/auth/token` | 200, JWT de 192 caracteres |
+| Endpoints de plantillas | `GET /v1/templates`, `GET /v1/templates/{producto}/{tipoEndoso}` | 200 con payload correcto |
+| Endoso traducido | `POST /v1/endorse/translate` | 200, `financialPlansEntity`/`productEntity`/`eventEntity` presentes, 7 `dynamicData`, 2 `eventAppliedEntities` |
+| Advisories de producción | `npm audit --omit=dev` | `found 0 vulnerabilities` |
+
+Efecto colateral medido: la instalación **eliminó 84 paquetes** del árbol (la cadena `glob`/`minimatch` completa), que es exactamente el origen de los 3 advisories moderados de producción.
 
 ---
 

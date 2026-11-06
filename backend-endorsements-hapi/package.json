@@ -18,11 +18,11 @@
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
-    "@hapi/hapi": "^21.3.10",
+    "@hapi/hapi": "^21.4.13",
     "joi": "^17.13.3",
-    "pg": "^8.13.1",
+    "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
-    "typeorm": "^0.3.20"
+    "typeorm": "^1.1.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
