@@ -13,11 +13,26 @@ server {
     listen ${PORT};
     server_name _;
 
-    # Endurecimiento mínimo de la SPA. No hay CSP ni WAF: fuera de alcance.
-    # `always` hace que también se apliquen a respuestas 4xx/5xx.
+    # No anunciar la versión de nginx en errores ni en la cabecera Server.
+    server_tokens off;
+
+    # Endurecimiento de la SPA. `always` hace que también se apliquen a 4xx/5xx.
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+
+    # CSP: el bundle de Vite carga su JS desde /assets (script-src 'self') y no
+    # usa HTML inyectado ni scripts inline, así que no hace falta 'unsafe-inline'
+    # para scripts. En estilos sí se permite porque React puede aplicar atributos
+    # `style`. `connect-src 'self' https:` cubre los dos modos de la app: rutas
+    # relativas tras este nginx (compose) y llamadas absolutas a los backends
+    # HTTPS de Cloud Run, sin abrir la puerta a orígenes http.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+
+    # HSTS: Cloud Run sirve HTTPS en el borde. Sin includeSubDomains ni preload
+    # para no condicionar un cambio de host de la demo.
+    add_header Strict-Transport-Security "max-age=31536000" always;
 
     root /usr/share/nginx/html;
     index index.html;

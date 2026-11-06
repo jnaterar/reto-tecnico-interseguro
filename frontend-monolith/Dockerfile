@@ -38,6 +38,18 @@ ENV PORT=8080
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
+# nginx sin privilegios: el puerto 8080 no es privilegiado, así que el master
+# no necesita root. El entrypoint oficial (envsubst) escribe en
+# /etc/nginx/conf.d y nginx escribe su PID y los temporales, todo ello se
+# reasigna al usuario `nginx` (uid 101) que ya trae la imagen.
+# `pid` sale de /var/run (root) a /tmp, y la directiva `user` se comenta porque
+# sin root nginx la ignora con un warning.
+RUN chown -R nginx:nginx /etc/nginx/conf.d /var/cache/nginx /var/log/nginx \
+ && sed -i 's#^[[:space:]]*pid[[:space:]].*#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf \
+ && sed -i 's#^[[:space:]]*user[[:space:]].*#\# user deshabilitado: el contenedor corre como USER nginx#' /etc/nginx/nginx.conf
+
+USER nginx
+
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

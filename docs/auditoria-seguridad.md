@@ -82,9 +82,9 @@ Ningún `FROM` fija digest: el build no es reproducible y la deriva de parches d
 | A2 | `ENABLE_DEMO_TOKEN=true` por defecto en el deploy | `deploy-gcp.sh` | **Riesgo aceptado durante la evaluación** (token acotado por `scope` y TTL de 1 h). Desactivar y rotar `JWT_SECRET` al cerrar |
 | A3 | Secretos como env vars en Cloud Run | `deploy-gcp.sh` | Aceptado para la demo; migrar a Secret Manager con `--set-secrets` |
 | A4 | `--allow-unauthenticated` en los 3 servicios | `deploy-gcp.sh` | Aceptado (demo pública); la autorización real es el JWT de aplicación |
-| A5 | SCA deshabilitado (`--no-audit`) y sin escaneo de imágenes | ambos Dockerfiles, `deploy-gcp.sh` | **Corregir en CI** (gates no bloqueantes primero) |
-| A6 | nginx corre como root, sin CSP/HSTS | `frontend-monolith/Dockerfile`, `nginx.conf.template` | Endurecer en la última fase |
-| A7 | `npm ci` sin `--ignore-scripts` | ambos Dockerfiles | Endurecer en runtime/build |
+| A5 | SCA deshabilitado (`--no-audit`) y sin escaneo de imágenes | ambos Dockerfiles, `deploy-gcp.sh` | **Corregido en `develop`**: los Dockerfiles siguen con `--no-audit` (para no frenar builds) pero el gate vive en `scripts/sca.sh`, fuera del pipeline que produjo la entrega |
+| A6 | nginx corre como root, sin CSP/HSTS | `frontend-monolith/Dockerfile`, `nginx.conf.template` | **Corregido en `develop`**: `USER nginx` (uid 101 verificado en ejecución), PID en `/tmp`, `server_tokens off`, CSP, HSTS, `Permissions-Policy` y `frame-ancestors 'none'`. Cabeceras presentes también en 4xx |
+| A7 | `npm ci` sin `--ignore-scripts` | ambos Dockerfiles | **Corregido en runtime**: `--ignore-scripts` en la etapa de producción del backend (ninguna dependencia de runtime necesita postinstall) |
 
 ---
 
@@ -100,7 +100,7 @@ Ningún `FROM` fija digest: el build no es reproducible y la deriva de parches d
 | 5 | `fix(db): verificación TLS estricta` | medio (operativo) | pre-check TLS contra Neon + smoke |
 | 6 | `deps: typeorm 1.1.2 + pg 8.23.1 + hapi 21.4.13` | alto (major) | **Hecho y validado** contra Neon (ver 5.2) |
 | 7 | `deps(dev): vitest 5 + vite 8` | alto (major) | **Hecho y validado**: `npm test`, build y auditoría en 0 (ver 5.3) |
-| 8 | `harden: runtime sin npm, nginx no-root, CSP/HSTS` | medio | smoke completo |
+| 8 | `harden: runtime sin npm, nginx no-root, CSP/HSTS` | medio | **Hecho y validado**: smoke completo (ver 5.4) |
 
 Regla: cada commit debe dejar `docker compose build --no-cache` y la suite de tests en verde. Si un commit falla la validación, se revierte individualmente (`git revert <sha>`).
 
@@ -158,6 +158,28 @@ Detalle de resolución: vitest 5.1.0 declara `vite` como **peer** (`^6.4 || ^7 |
 | Smoke HTTP | `/health` 200, `/v1/templates` 200, `/v1/endorse/translate` 200 (7 `dynamicData`, 2 `eventAppliedEntities`), sin token 401 | `/` 200, `/healthz` 200, asset `/assets/index-*.js` 200 |
 
 Efecto en el árbol: el backend retiró 21 paquetes y el frontend 50 (toda la cadena de esbuild antiguo, tinypool y `@vitest/*` vulnerables).
+
+### 5.4 Endurecimiento de los runtimes
+
+Tres cambios, todos verificados en ejecución y no solo en el build:
+
+1. **El backend ya no lleva `npm`.** En la etapa de producción se instala con `--omit=dev --ignore-scripts` y después se borran `npm`, `npx` y `corepack` del sistema de archivos. Ninguna dependencia de runtime necesita postinstall (`pg` es JS puro y TypeORM 1.x dejó de arrastrar `glob`), y el proceso nunca invoca el gestor de paquetes: ni el `CMD` ni el `HEALTHCHECK` ni el contenedor `seed` de [`docker-compose.yml`](docker-compose.yml:73), que ejecuta `node dist/seed/seed.js`. `bootstrap-db` de [`deploy-gcp.sh`](deploy-gcp.sh:330) hace `npm ci` en el **host**, no dentro de la imagen, así que tampoco se ve afectado.
+2. **nginx corre sin privilegios.** El puerto 8080 no es privilegiado, así que el master no necesita root: se reasignan a `nginx` los directorios que escribe el entrypoint (`/etc/nginx/conf.d`) y los de caché/log, se mueve el PID de `/var/run` a `/tmp` y se comenta la directiva `user` (sin root nginx la ignora con un warning).
+3. **Cabeceras de seguridad.** `server_tokens off`, CSP con `script-src 'self'` (el bundle de Vite carga todo desde `/assets` y no hay HTML inyectado ni scripts inline), `style-src 'self' 'unsafe-inline'` (React puede aplicar atributos `style`), `connect-src 'self' https:` para cubrir tanto las rutas relativas de compose como las URLs absolutas de Cloud Run, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'` y HSTS de un año sin `includeSubDomains` ni `preload`.
+
+| Verificación | Resultado |
+|---|---|
+| `docker build` backend y frontend | OK |
+| Usuario del proceso backend | `uid=1000 (node)` |
+| `npm`/`npx` dentro del contenedor backend | ausentes; `node -v` = v22.23.4 |
+| Usuario del master nginx | `uid=101 (nginx)` |
+| `nginx -t` dentro del contenedor | `syntax is ok` / `test is successful` |
+| `/health` backend contra Neon real | 200 |
+| `/v1/templates` y `/v1/endorse/translate` con token | 200 / 200 |
+| Frontend `/`, `/healthz` y asset `/assets/index-*.js` | 200 / 200 / 200 |
+| Cabeceras en respuesta 200 y en 404 | CSP, HSTS, `Permissions-Policy` y `X-Frame-Options` presentes en ambas |
+
+Sin cambios en `deploy-gcp.sh`, `cloudbuild-frontend.yaml` ni `docker-compose.yml`: el pipeline y la orquestación que produjeron la entrega siguen intactos.
 
 ---
 
