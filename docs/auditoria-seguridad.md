@@ -61,13 +61,15 @@ Ningún `FROM` fija digest: el build no es reproducible y la deriva de parches d
 **Conteo `npm audit` frontend:** `{ total: 0 }`.
 **Conteo `npm audit --omit=dev` (lo que realmente se despliega):** backend `{ moderate: 3 }` → **`{ total: 0 }` tras el commit 7**, las 3 estaban en la cadena `typeorm@0.3.31 → glob@10.5.0 → minimatch`; frontend `{ total: 0 }`. Conclusión: las 2 críticas y la alta del árbol completo **no viajan a la imagen** (`npm ci --omit=dev` las excluye); el único hallazgo de producción era la cadena de TypeORM, y `npm audit` solo la corrige con `typeorm@1.1.2` (major, ya aplicado).
 
+**Conteo tras el commit 8:** el árbol completo (incluyendo dev/test) queda en **`{ total: 0 }` en ambos servicios**. vitest `2.1.9 → 5.1.0` y vite `5.4.21 → 8.3.6` arrastran `tinypool≥2` y `esbuild 0.28.2`, con lo que desaparecen las 2 críticas, la alta y los moderados asociados a `@vitest/mocker`, `esbuild` y la UI de vitest. Los 9 advisories del backend pasan a 0 sin excepciones ni supresiones.
+
 **Go:** sin `go.sum`; no hay módulos de terceros, por lo que la superficie se limita a stdlib + imagen base.
 
 ### 3.1 Análisis de alcanzabilidad
 
 - `glob`/`minimatch` se usan en TypeORM para cargar entidades por patrón. Este proyecto pasa un **array explícito de clases** en [`../backend-endorsements-hapi/src/config/data-source.ts`](../backend-endorsements-hapi/src/config/data-source.ts), no invoca el CLI ni globs, y el patrón nunca proviene del cliente. **No alcanzable por HTTP**: riesgo residual bajo.
 - Las críticas (`vitest` UI, `tinypool`) son de tooling de test. `npm ci --omit=dev` las excluye del runtime y el frontend no las incluye en el bundle estático.
-- El frontend compila con Vite 6.4.5 (fuera del rango afectado) y su imagen final solo contiene nginx + assets.
+- El frontend compila con Vite 8.3.6 (fuera del rango afectado) y su imagen final solo contiene nginx + assets.
 - No hay parsers XML/YAML ni descompresión de `Content-Encoding` en la ruta de request: solo JSON, con límite de payload de Hapi y `http.MaxBytesReader` de 1 MiB en Go.
 
 ---
@@ -97,7 +99,7 @@ Ningún `FROM` fija digest: el build no es reproducible y la deriva de parches d
 | 4 | `chore: engines/.nvmrc + digest pinning` | nulo | `docker buildx imagetools inspect` |
 | 5 | `fix(db): verificación TLS estricta` | medio (operativo) | pre-check TLS contra Neon + smoke |
 | 6 | `deps: typeorm 1.1.2 + pg 8.23.1 + hapi 21.4.13` | alto (major) | **Hecho y validado** contra Neon (ver 5.2) |
-| 7 | `deps(dev): vitest 5 + vite 8` | alto (major) | `npm test` |
+| 7 | `deps(dev): vitest 5 + vite 8` | alto (major) | **Hecho y validado**: `npm test`, build y auditoría en 0 (ver 5.3) |
 | 8 | `harden: runtime sin npm, nginx no-root, CSP/HSTS` | medio | smoke completo |
 
 Regla: cada commit debe dejar `docker compose build --no-cache` y la suite de tests en verde. Si un commit falla la validación, se revierte individualmente (`git revert <sha>`).
@@ -137,6 +139,25 @@ La validación no se apoyó en mocks: se ejecutó contra la base real de Neon, c
 | Advisories de producción | `npm audit --omit=dev` | `found 0 vulnerabilities` |
 
 Efecto colateral medido: la instalación **eliminó 84 paquetes** del árbol (la cadena `glob`/`minimatch` completa), que es exactamente el origen de los 3 advisories moderados de producción.
+
+### 5.3 Evidencia del salto de tooling: vitest 5 + vite 8
+
+Estas 9 advisories (2 críticas, 1 alta, 6 moderadas) eran **solo de herramientas de test**: `npm ci --omit=dev` nunca las instaló en la imagen y el bundle del frontend es estático. Aun así se corrigieron para no dejar deuda en el árbol.
+
+Detalle de resolución: vitest 5.1.0 declara `vite` como **peer** (`^6.4 || ^7 || ^8`) y el árbol anterior retenía `vite@5.4.21`. En vez de forzar la instalación con `--force` o `--legacy-peer-deps` —que produciría un lockfile que `npm ci` rechazaría—, se declaró `vite@^8.3.6` de forma explícita en el backend. En el frontend el salto obliga a acompañar el plugin: [`@vitejs/plugin-react`](frontend-monolith/package.json:25) sube a `6.2.1`, cuya única exigencia dura es `vite ^8` (los peers `oxc-transform-react`, `@rolldown/plugin-babel` y `babel-plugin-react-compiler` son opcionales).
+
+| Verificación | Backend | Frontend |
+|---|---|---|
+| Versiones resueltas | vitest 5.1.0, vite 8.3.6 | vite 8.3.6, plugin-react 6.2.1, react 18.3.1 |
+| Tipo | `npm run typecheck` OK | `npm run typecheck` OK |
+| Tests | `npm test` → 38/38 | — (sin suite, el build valida el bundle) |
+| Build | `npm run build` OK | `vite build` OK: 37 módulos, `dist/assets` generado |
+| Lockfile con npm 10.9.9 | `docker build` OK | `docker build` OK |
+| Auditoría prod | `found 0 vulnerabilities` | `found 0 vulnerabilities` |
+| Auditoría árbol completo | `found 0 vulnerabilities` | `found 0 vulnerabilities` |
+| Smoke HTTP | `/health` 200, `/v1/templates` 200, `/v1/endorse/translate` 200 (7 `dynamicData`, 2 `eventAppliedEntities`), sin token 401 | `/` 200, `/healthz` 200, asset `/assets/index-*.js` 200 |
+
+Efecto en el árbol: el backend retiró 21 paquetes y el frontend 50 (toda la cadena de esbuild antiguo, tinypool y `@vitest/*` vulnerables).
 
 ---
 
