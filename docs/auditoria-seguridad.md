@@ -200,15 +200,35 @@ s.on("error", (e) => { console.log("ERROR:", e.code); process.exit(1); });'
 
 Resultado: `authorized = true`, `TLSv1.3`, emisor **Let's Encrypt**, CN `*.c-16.us-east-1.aws.neon.tech`, válido hasta **2027-01-20**. Let's Encrypt está en el trust store de Node 22, así que activar la verificación estricta no impide que el backend arranque.
 
-**Validación local completa:**
+**Validación full-stack ejecutada sobre `develop` (commit `70e9b1a`).** No se probaron los servicios por separado: se levantó la orquestación completa desde cero y se recorrió el camino real del usuario, que entra por nginx y desde ahí llega a los dos backends.
 
 ```bash
-docker compose build --no-cache
-docker compose up -d db endorsements routes frontend
-docker compose run --rm seed
+docker compose down -v --remove-orphans
+docker compose up -d --build
+```
+
+| Paso comprobado | Resultado |
+|---|---|
+| `seed` (exit code) | `0` — "Plantilla RUMBO/CAMBIO_FRECUENCIA v1 lista (12 campos, 2 eventos)", "Plantilla AUTO/CAMBIO_FRECUENCIA v1 lista (7 campos, 2 eventos)", "Seed completado" |
+| Estado de los 4 servicios | `db`, `endorsements`, `routes`, `frontend` en `(healthy)` |
+| Frontend `GET /` y `GET /healthz` a través de nginx | 200 / 200 |
+| `POST /endorse-api/v1/auth/demo-token` | 200, JWT de 192 caracteres |
+| `GET /endorse-api/v1/templates` | 200 |
+| `POST /endorse-api/v1/endorse/translate` | 200 — `dynamicData` con 7 entradas y 2 `eventAppliedEntities` |
+| `POST /routes-api/v1/auth/token` | 200, JWT de 188 caracteres |
+| `POST /routes-api/v1/routes/optimal` | 200 — depósito `Miraflores`, distancia `3`, ruta `Miraflores->Barranco` |
+| `GET /endorse-api/v1/templates` sin token | 401 |
+| Cabeceras de seguridad en la respuesta del frontend | CSP y HSTS presentes |
+
+El proxy de nginx conserva el enrutado relativo de compose (`/endorse-api/` y `/routes-api/`) y la resolución dinámica por `resolver 127.0.0.11`, así que el endurecimiento del commit 9 no alteró el contrato que consume el SPA.
+
+**Comandos de re-verificación rápida (sin reconstruir):**
+
+```bash
+docker compose ps
 curl -fsS http://localhost:8080/healthz
-curl -fsS http://localhost:8082/health
 curl -fsS http://localhost:8081/health
+curl -fsS http://localhost:8082/health
 docker compose exec frontend nginx -t
 ./deploy-gcp.sh smoke   # solo cuando exista una revisión nueva con tráfico
 ```
