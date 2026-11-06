@@ -121,6 +121,8 @@ curl -s http://localhost:8081/health;  echo   # {"service":"routes-optimal","sta
 curl -s http://localhost:8082/health;  echo   # {"status":"ok","service":"endorsements-translator","version":"v1"}
 ```
 
+> **`/healthz` funciona en local pero no en Cloud Run.** En local el tráfico va directo a nginx y `/healthz` responde `ok`. En Cloud Run esa ruta la intercepta Google Frontend antes de llegar al contenedor y devuelve un `404` HTML de Google (`Error 404 (Not Found)!!1`), mientras que cualquier ruta inexistente de la SPA responde `200` por el *fallback* de nginx. Para comprobar el frontend desplegado usa `/` (200) y para los backends su `/health` (200).
+
 > El servicio `seed` es de un solo uso: aparece y termina con código 0 tras cargar las plantillas `RUMBO/CAMBIO_FRECUENCIA` (12 campos) y `AUTO/CAMBIO_FRECUENCIA` (7 campos). Compruébalo con `docker compose logs seed | tail -5`.
 
 **`down` vs `down -v`:** `docker compose down` conserva el volumen `db_data` y es lo correcto para reinicios rápidos; `down -v` lo borra y obliga a re-sembrar. Usa `-v` solo cuando quieras un estado limpio de verdad.
@@ -252,7 +254,7 @@ set -euo pipefail
 # --- Bloque 1: dependencias y gates ---
 (cd backend-endorsements-hapi && npm ci && npm run typecheck && npm test && npm run build)
 (cd frontend-monolith && npm ci && npm run typecheck && npm run build)
-(cd backend-routes-golang && go vet ./... && go test ./...)
+(cd backend-routes-golang && go vet ./... && go test -cover ./...)
 bash scripts/sca.sh
 
 # --- Bloque 2: stack limpio + salud ---
@@ -303,3 +305,54 @@ templates sin token -> 401
 ```
 
 Si tu salida difiere en los conteos (`campos`, `eventos`), revisa el orden de los pasos: el `down -v` es lo que garantiza que las plantillas vienen del `seed` de esta ejecución y no de un volumen anterior.
+
+---
+
+## 9. Redespliegue y verificación en producción
+
+Flujo ejecutado el 2026-11-06 sobre `main` con la etiqueta `v1.0.0`. El orden importa: primero se capturan las revisiones que atienden tráfico, porque [`deploy-gcp.sh`](../deploy-gcp.sh:233) **no usa `--no-traffic`** — el tráfico cambia en cuanto la revisión nueva queda lista y el smoke valida después.
+
+```bash
+# 0) Capturar revisiones vivas ANTES de tocar nada (rollback de un comando)
+for s in endorsements routes frontend; do
+  gcloud run services describe "$s" --region us-central1 \
+    --format="value(status.traffic[0].revisionName, spec.template.spec.containers[0].image)"
+done
+
+# 1) Secretos del operador (deploy.env.sh no se versiona) y despliegue con etiqueta estable
+set -a; . ./deploy.env.sh; set +a
+TAG=v1.0.0 ./deploy-gcp.sh redeploy
+
+# 2) Verificar los TRES servicios (el smoke del script solo cubre endorsements)
+E=https://endorsements-919990628042.us-central1.run.app
+R=https://routes-919990628042.us-central1.run.app
+F=https://frontend-919990628042.us-central1.run.app
+curl -s -o /dev/null -w 'frontend   /       -> %{http_code}\n' "$F/"
+curl -s -o /dev/null -w 'endorse    /health -> %{http_code}\n' "$E/health"
+curl -s -o /dev/null -w 'routes     /health -> %{http_code}\n' "$R/health"
+
+# 3) Rollback si el smoke falla
+gcloud run services update-traffic <servicio> --region us-central1 --to-revisions <REVISION>=100
+```
+
+`redeploy` encadena: build de los dos backends (`gcloud builds submit` **desde el árbol de trabajo**, no desde git) → deploy de backends → build y deploy del frontend con las `VITE_*` → `update-cors` con la URL larga canónica → smoke estricto con `SMOKE_EXPECT_IMAGE`.
+
+Evidencia de la ejecución:
+
+| Servicio | Revisión sirviendo 100% | Imagen |
+| --- | --- | --- |
+| `endorsements` | `endorsements-00009-jsb` | `.../interseguro-reto/endorsements:v1.0.0` |
+| `routes` | `routes-00009-8k5` | `.../interseguro-reto/routes:v1.0.0` |
+| `frontend` | `frontend-00004-f8m` | `.../interseguro-reto/frontend:v1.0.0` |
+
+| Comprobación en producción | Resultado |
+| --- | --- |
+| `GET /` del frontend | 200 con `Content-Security-Policy` y `Strict-Transport-Security: max-age=31536000` |
+| `POST /v1/auth/token` (endorsements y routes) | 200, tokens de 192 y 188 caracteres |
+| `POST /v1/endorse/translate` (`RUMBO`) | 200, `campos = 12`, `eventos = 2` |
+| `POST /v1/routes/optimal` | 200, `distance = 3`, ruta `D1 → B → A` |
+| `GET /v1/templates` sin token | 401 |
+| CORS con `Origin` del frontend | `access-control-allow-origin` = URL larga canónica |
+| CORS con `Origin: https://evil.example.com` | sin `access-control-allow-origin` |
+
+Las revisiones anteriores (`endorsements-00007-28d`, `routes-00007-rgp`, `frontend-00003-tmq`, todas con imagen `:4660882`) siguen existiendo y son el destino del rollback si hiciera falta revertir.
