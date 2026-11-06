@@ -1,5 +1,6 @@
 # ---- Build ----
-FROM node:22-alpine AS build
+# Node 22 LTS (soporte hasta 2027-04-30), patch fijado para builds reproducibles.
+FROM node:22.23.4-alpine AS build
 WORKDIR /app
 
 COPY package*.json ./

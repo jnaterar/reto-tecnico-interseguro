@@ -1,5 +1,7 @@
 # --- build stage ---
-FROM node:22-slim AS builder
+# Node 22 es LTS en mantenimiento (soporte hasta 2027-04-30). Se fija el patch
+# exacto para que el build no cambie por un `docker pull` (tag movil `22-slim`).
+FROM node:22.23.4-slim AS builder
 
 WORKDIR /app
 COPY package*.json ./
@@ -10,7 +12,7 @@ COPY src ./src
 RUN npm run build
 
 # --- runtime stage ---
-FROM node:22-slim AS runtime
+FROM node:22.23.4-slim AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production
