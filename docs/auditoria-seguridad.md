@@ -76,7 +76,7 @@ Ningún `FROM` fija digest: el build no es reproducible y la deriva de parches d
 
 | # | Hallazgo | Evidencia | Decisión |
 |---|---|---|---|
-| A1 | `ssl: { rejectUnauthorized: false }` hacia Postgres | `backend-endorsements-hapi/src/config/data-source.ts` | **Corregir con pre-check contra Neon antes de desplegar** (si la CA no valida, el backend no arranca) |
+| A1 | `ssl: { rejectUnauthorized: false }` hacia Postgres | `backend-endorsements-hapi/src/config/data-source.ts` | **Corregido en `develop`**: `DB_SSL_REJECT_UNAUTHORIZED` es `true` por defecto. Pre-check ejecutado contra el host real de Neon → `authorized=true`, TLSv1.3, Let's Encrypt, válido hasta 2027-01-20 |
 | A2 | `ENABLE_DEMO_TOKEN=true` por defecto en el deploy | `deploy-gcp.sh` | **Riesgo aceptado durante la evaluación** (token acotado por `scope` y TTL de 1 h). Desactivar y rotar `JWT_SECRET` al cerrar |
 | A3 | Secretos como env vars en Cloud Run | `deploy-gcp.sh` | Aceptado para la demo; migrar a Secret Manager con `--set-secrets` |
 | A4 | `--allow-unauthenticated` en los 3 servicios | `deploy-gcp.sh` | Aceptado (demo pública); la autorización real es el JWT de aplicación |
@@ -118,7 +118,20 @@ Qué verifica: `npm audit --omit=dev` (bloqueante en modo `--strict`), `npm audi
 
 ## 6. Validación y rollback
 
-**Pre-check TLS (antes del commit 5):** abrir conexión con `rejectUnauthorized: true` contra el host pooled de Neon usando las mismas credenciales y verificar que la cadena valida desde el entorno de ejecución.
+**Pre-check TLS (commit 5) — ejecutado y aprobado.** Handshake con SNI y `rejectUnauthorized: true` contra el host pooled de Neon, lanzado desde la propia imagen `node:22.23.4-slim`:
+
+```bash
+HOST="$(grep -m1 '^export DB_HOST_POOLED=' deploy.env.sh | sed -e 's/^export DB_HOST_POOLED=//' -e 's/^"//' -e 's/"$//')"
+docker run --rm -e H="$HOST" node:22.23.4-slim node -e '
+const tls = require("node:tls");
+const s = tls.connect({ host: process.env.H, port: 5432, servername: process.env.H, rejectUnauthorized: true }, () => {
+  console.log("authorized =", s.authorized, "|", s.getProtocol());
+  s.end();
+});
+s.on("error", (e) => { console.log("ERROR:", e.code); process.exit(1); });'
+```
+
+Resultado: `authorized = true`, `TLSv1.3`, emisor **Let's Encrypt**, CN `*.c-16.us-east-1.aws.neon.tech`, válido hasta **2027-01-20**. Let's Encrypt está en el trust store de Node 22, así que activar la verificación estricta no impide que el backend arranque.
 
 **Validación local completa:**
 
