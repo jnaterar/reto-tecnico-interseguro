@@ -1,5 +1,7 @@
 # --- build stage ---
-FROM golang:1.22-alpine AS builder
+# Go 1.26 fija la semantica de lenguaje; el toolchain 1.27 aporta la stdlib
+# parcheada (1.22 esta EOL desde feb-2025 y no recibe correcciones de seguridad).
+FROM golang:1.27.3-alpine3.24 AS builder
 
 WORKDIR /src
 COPY go.mod ./
