@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Frontend del reto técnico Interseguro: traductor de endosos y ruta óptima de grúa",
+  "engines": {
+    "node": "^22.12.0 || >=24.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -19,8 +22,8 @@
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^6.2.1",
     "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "vite": "^8.3.6"
   }
 }

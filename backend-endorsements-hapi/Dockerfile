@@ -1,5 +1,7 @@
 # --- build stage ---
-FROM node:22-slim AS builder
+# Node 22 es LTS en mantenimiento (soporte hasta 2027-04-30). Se fija el patch
+# exacto para que el build no cambie por un `docker pull` (tag movil `22-slim`).
+FROM node:22.23.4-slim AS builder
 
 WORKDIR /app
 COPY package*.json ./
@@ -10,7 +12,7 @@ COPY src ./src
 RUN npm run build
 
 # --- runtime stage ---
-FROM node:22-slim AS runtime
+FROM node:22.23.4-slim AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production
@@ -19,7 +21,16 @@ ENV NODE_ENV=production
 ENV PORT=8082
 
 COPY package*.json ./
-RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+# `--ignore-scripts` en la etapa que llega a producción: ninguna dependencia de
+# runtime necesita postinstall (pg es JS puro, TypeORM 1.x ya no usa `glob`),
+# así que no se ejecuta código de paquetes al instalar.
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+ && npm cache clean --force \
+ # El proceso no ejecuta npm/npx/corepack en runtime: se eliminan del sistema
+ # de archivos para que un compromiso del proceso no encuentre el gestor de
+ # paquetes (ni su árbol de dependencias) a mano.
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+           /usr/local/lib/node_modules/corepack /usr/local/bin/corepack
 # `dist` incluye el API (dist/index.js) y el seed (dist/seed/seed.js).
 COPY --chown=node:node --from=builder /app/dist ./dist
 

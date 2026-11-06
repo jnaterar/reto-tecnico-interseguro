@@ -1,5 +1,6 @@
 # ---- Build ----
-FROM node:22-alpine AS build
+# Node 22 LTS (soporte hasta 2027-04-30), patch fijado para builds reproducibles.
+FROM node:22.23.4-alpine AS build
 WORKDIR /app
 
 COPY package*.json ./
@@ -18,7 +19,8 @@ ENV VITE_API_ROUTES_URL=$VITE_API_ROUTES_URL
 RUN npm run build
 
 # ---- Runtime ----
-FROM nginx:1.27-alpine AS runtime
+# nginx 1.27 es una rama mainline cerrada (sin parches desde abr-2025).
+FROM nginx:1.29.8-alpine AS runtime
 
 # POR QUÉ EL PROXY INTERNO NO SIRVE EN CLOUD RUN:
 # `proxy_pass http://endorsements:8082` y `http://routes:8081` dependen del DNS
@@ -35,6 +37,18 @@ COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 ENV PORT=8080
 
 COPY --from=build /app/dist /usr/share/nginx/html
+
+# nginx sin privilegios: el puerto 8080 no es privilegiado, así que el master
+# no necesita root. El entrypoint oficial (envsubst) escribe en
+# /etc/nginx/conf.d y nginx escribe su PID y los temporales, todo ello se
+# reasigna al usuario `nginx` (uid 101) que ya trae la imagen.
+# `pid` sale de /var/run (root) a /tmp, y la directiva `user` se comenta porque
+# sin root nginx la ignora con un warning.
+RUN chown -R nginx:nginx /etc/nginx/conf.d /var/cache/nginx /var/log/nginx \
+ && sed -i 's#^[[:space:]]*pid[[:space:]].*#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf \
+ && sed -i 's#^[[:space:]]*user[[:space:]].*#\# user deshabilitado: el contenedor corre como USER nginx#' /etc/nginx/nginx.conf
+
+USER nginx
 
 EXPOSE 8080
 

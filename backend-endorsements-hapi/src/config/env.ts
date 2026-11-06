@@ -13,6 +13,13 @@ export interface AppConfig {
   dbSynchronize: boolean;
   dbLogging: boolean;
   dbSsl: boolean;
+  /**
+   * Verificación estricta del certificado del servidor Postgres.
+   * `true` por defecto: un `DB_SSL=true` sin verificación acepta cualquier
+   * certificado y convierte TLS en cifrado sin autenticación (MITM trivial).
+   * Solo se pone en `false` explícitamente contra un certificado self-signed.
+   */
+  dbSslVerify: boolean;
   jwtSecret: string;
   jwtTtlSeconds: number;
   enableDemoToken: boolean;
@@ -120,6 +127,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dbLogging: parseBoolean(env.DB_LOGGING, false),
     // Postgres gestionado (Cloud SQL por IP pública, Render) exige TLS.
     dbSsl: parseBoolean(env.DB_SSL, false),
+    // Estricto por defecto: la CA del servidor debe validar contra el trust
+    // store de Node. Neon usa Let's Encrypt, presente en el trust store.
+    dbSslVerify: parseBoolean(env.DB_SSL_REJECT_UNAUTHORIZED, true),
     jwtSecret,
     // Una hora en todos los entornos: el jurado no debería tener que re-emitir
     // el token, y el riesgo queda acotado por el scope (endorse:translate) y la

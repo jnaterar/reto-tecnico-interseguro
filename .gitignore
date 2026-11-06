@@ -18,6 +18,9 @@ __pycache__/
 # Estado local de deploy-gcp.sh (URLs públicas capturadas)
 .deploy-state.env
 
+# Reportes del escaneo SCA local (scripts/sca.sh)
+.sca/
+
 # Binarios Go
 bin/
 *.exe
