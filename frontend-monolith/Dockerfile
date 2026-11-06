@@ -18,7 +18,8 @@ ENV VITE_API_ROUTES_URL=$VITE_API_ROUTES_URL
 RUN npm run build
 
 # ---- Runtime ----
-FROM nginx:1.27-alpine AS runtime
+# nginx 1.27 es una rama mainline cerrada (sin parches desde abr-2025).
+FROM nginx:1.29.8-alpine AS runtime
 
 # POR QUÉ EL PROXY INTERNO NO SIRVE EN CLOUD RUN:
 # `proxy_pass http://endorsements:8082` y `http://routes:8081` dependen del DNS
