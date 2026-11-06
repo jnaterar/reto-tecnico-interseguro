@@ -59,6 +59,8 @@ Ningún `FROM` fija digest: el build no es reproducible y la deriva de parches d
 
 **Conteo `npm audit` backend:** `{ critical: 2, high: 1, moderate: 6, total: 9 }`.
 **Conteo `npm audit` frontend:** `{ total: 0 }`.
+**Conteo `npm audit --omit=dev` (lo que realmente se despliega):** backend `{ moderate: 3 }`, todas en la cadena `typeorm@0.3.31 → glob@10.5.0 → minimatch`; frontend `{ total: 0 }`. Conclusión: las 2 críticas y la alta del árbol completo **no viajan a la imagen** (`npm ci --omit=dev` las excluye); el único hallazgo de producción es la cadena de TypeORM, y `npm audit` solo la corrige con `typeorm@1.1.2` (major).
+
 **Go:** sin `go.sum`; no hay módulos de terceros, por lo que la superficie se limita a stdlib + imagen base.
 
 ### 3.1 Análisis de alcanzabilidad
@@ -89,7 +91,7 @@ Ningún `FROM` fija digest: el build no es reproducible y la deriva de parches d
 | # | Commit | Riesgo | Verificación |
 |---|---|---|---|
 | 0 | `docs(security): auditoría y riesgos aceptados` | nulo | — |
-| 1 | `ci(security): gates SCA no bloqueantes` | bajo | pipeline |
+| 1 | `ci(security): gates SCA no bloqueantes` | bajo | `./scripts/sca.sh` |
 | 2 | `build(go): toolchain 1.27 + go 1.26` | bajo | `go vet ./... && go test ./...` |
 | 3 | `build(frontend): nginx 1.29-alpine` | bajo | `docker compose build frontend` + `nginx -t` |
 | 4 | `chore: engines/.nvmrc + digest pinning` | nulo | `docker buildx imagetools inspect` |
@@ -99,6 +101,18 @@ Ningún `FROM` fija digest: el build no es reproducible y la deriva de parches d
 | 8 | `harden: runtime sin npm, nginx no-root, CSP/HSTS` | medio | smoke completo |
 
 Regla: cada commit debe dejar `docker compose build --no-cache` y la suite de tests en verde. Si un commit falla la validación, se revierte individualmente (`git revert <sha>`).
+
+### 5.1 Gates SCA locales (`scripts/sca.sh`)
+
+El gate se implementó como script **aditivo y no bloqueante**, no como modificación de `deploy-gcp.sh` ni de `cloudbuild-frontend.yaml`: el pipeline que produjo la entrega queda byte a byte igual.
+
+```bash
+./scripts/sca.sh              # informa y sale 0 siempre
+./scripts/sca.sh --strict     # sale 1 si hay hallazgos en dependencias de producción
+./scripts/sca.sh --images     # además escanea las imágenes locales con trivy
+```
+
+Qué verifica: `npm audit --omit=dev` (bloqueante en modo `--strict`), `npm audit` del árbol completo (solo informativo, es donde viven las advisories de vitest/vite), `govulncheck ./...` sobre Go y `trivy image` con `--ignore-unfixed` sobre las tres imágenes. Los reportes quedan en `.sca/` (ignorado por git).
 
 ---
 
